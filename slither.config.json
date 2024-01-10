@@ -1,0 +1,4 @@
+{
+  "filter_paths": "(/test/|/lib/|/mocks/)",
+  "json": "slither-report.json"
+}
