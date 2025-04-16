@@ -6,10 +6,12 @@ gas_reports = ["StakePadV1", "RewardReceiver"]
 tests = ["test/"]
 
 [rpc_endpoints]
+hoodi = "${HOODI_RPC}"
 goerli = "${GOERLI_RPC}"
 mainnet = "${MAINNET_RPC}"
 
 [etherscan]
+hoodi = { key = "${ETHERSCAN_API_KEY}" }
 goerli = { key = "${ETHERSCAN_API_KEY}" }
 mainnet = { key = "${ETHERSCAN_API_KEY}" }
 
