@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.18;
+pragma solidity 0.8.22;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -31,7 +31,7 @@ import "./interfaces/IStakePad.sol";
 
 /**
  * @title StakePadV1
- * @author Quantum3 Labs <contact@quantum3labs.com>
+ * @author GlobalStake
  * @notice V1 of StakePad contracts
  */
 contract StakePadV1 is IStakePad, Initializable, UUPSUpgradeable, OwnableUpgradeable {
@@ -52,21 +52,21 @@ contract StakePadV1 is IStakePad, Initializable, UUPSUpgradeable, OwnableUpgrade
      */
     function initialize(address newRewardReceiverImpl) external initializer {
         _updateRewardReceiverImpl(newRewardReceiverImpl);
-        __Ownable_init();
+        __Ownable_init(0xD60CA38884509c7b296da19A44C71C61D9e78EFf);
     }
 
     /**
      * @notice creates a contract that will receive the rewards
      * @param client Beneficiary of the rewards
      * @param provider Account on behalf of this contract
-     * @param comission percentage of the rewards that will be sent to the provider
+     * @param commission percentage of the rewards that will be sent to the provider
      */
-    function deployNewRewardReceiver(address client, address provider, uint96 comission) external override onlyOwner {
+    function deployNewRewardReceiver(address client, address provider, uint96 commission) external override onlyOwner {
         address newRewardReceiver = Clones.clone(rewardReceiverImpl());
-        IRewardReceiver(newRewardReceiver).initialize(client, provider, comission, address(this));
+        IRewardReceiver(newRewardReceiver).initialize(client, provider, commission, address(this));
         IRewardReceiver(newRewardReceiver).transferOwnership(owner());
         _rewardReceivers.add(newRewardReceiver);
-        emit NewRewardReceiver(_rewardReceivers.length(), newRewardReceiver, client, provider, comission);
+        emit NewRewardReceiver(_rewardReceivers.length(), newRewardReceiver, client, provider, commission);
     }
 
     /**
@@ -74,16 +74,26 @@ contract StakePadV1 is IStakePad, Initializable, UUPSUpgradeable, OwnableUpgrade
      * @param DepositDataArray Array of DepositData. See StakePadUtils.sol
      */
     function fundValidators(StakePadUtils.BeaconDepositParams[] calldata DepositDataArray) external payable override {
-        require(msg.value == 32 ether * DepositDataArray.length, "StakePadV1: incorrect amount of ETH");
-        for (uint256 i = 0; i < DepositDataArray.length; ++i) {
-            StakePadUtils.BeaconDepositParams calldata DepositData = DepositDataArray[i];
-            _validateWithdrawalCredentials(DepositData.withdrawal_credentials);
-            _addValidatorPubKey(DepositData.pubkey, DepositData.withdrawal_credentials);
-            beaconDeposit.deposit{value: 32 ether}(
-                DepositData.pubkey,
-                DepositData.withdrawal_credentials,
-                DepositData.signature,
-                DepositData.deposit_data_root
+        require(DepositDataArray.length > 0, "no deposits");
+
+        uint256 total;
+        for (uint256 i = 0; i < DepositDataArray.length; i++) {
+            total += DepositDataArray[i].amount;
+        }
+
+        require(msg.value == total, "incorrect ETH amount");
+
+        for (uint256 i = 0; i < DepositDataArray.length; i++) {
+            beaconDeposit.deposit{value: DepositDataArray[i].amount}(
+                DepositDataArray[i].pubkey,
+                DepositDataArray[i].withdrawal_credentials,
+                DepositDataArray[i].signature,
+                DepositDataArray[i].deposit_data_root
+            );
+
+            _addValidatorPubKey(
+                DepositDataArray[i].pubkey,
+                DepositDataArray[i].withdrawal_credentials
             );
         }
     }

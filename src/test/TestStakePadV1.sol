@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.18;
+pragma solidity 0.8.22;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -30,15 +30,15 @@ contract TestStakePadV1 is IStakePad, Initializable, UUPSUpgradeable, OwnableUpg
 
     function initialize(address newRewardReceiverImpl) external initializer {
         _updateRewardReceiverImpl(newRewardReceiverImpl);
-        __Ownable_init();
+        __Ownable_init(0xD60CA38884509c7b296da19A44C71C61D9e78EFf);
     }
 
-    function deployNewRewardReceiver(address client, address provider, uint96 comission) external override {
+    function deployNewRewardReceiver(address client, address provider, uint96 commission) external override {
         address newRewardReceiver = Clones.clone(rewardReceiverImpl());
-        IRewardReceiver(newRewardReceiver).initialize(client, provider, comission, address(this));
+        IRewardReceiver(newRewardReceiver).initialize(client, provider, commission, address(this));
         IRewardReceiver(newRewardReceiver).transferOwnership(owner());
         _rewardReceivers.add(newRewardReceiver);
-        emit NewRewardReceiver(_rewardReceivers.length(), newRewardReceiver, client, provider, comission);
+        emit NewRewardReceiver(_rewardReceivers.length(), newRewardReceiver, client, provider, commission);
     }
 
     /**

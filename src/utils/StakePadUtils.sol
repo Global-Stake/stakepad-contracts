@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.18;
+pragma solidity 0.8.22;
 
 library StakePadUtils {
     struct BeaconDepositParams {
@@ -8,5 +8,6 @@ library StakePadUtils {
         bytes withdrawal_credentials;
         bytes signature;
         bytes32 deposit_data_root;
+        uint256 amount;
     }
 }

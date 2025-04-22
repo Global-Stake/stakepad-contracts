@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.18;
+pragma solidity 0.8.22;
 
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /**
  * @title Upgradeable Proxy for StakePad
- * @author Quantum3 Labs
+ * @author GlobalStake
  * @notice Serves as entry point for all functions inside stakePad contract
  */
 contract StakePadUpgradeableProxy is ERC1967Proxy {

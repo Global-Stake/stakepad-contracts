@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.18;
+pragma solidity 0.8.22;
 
 interface IRewardReceiver {
     event RewardSent(address indexed, uint256);
-    event ComissionSent(address indexed, uint256);
+    event CommissionSent(address indexed, uint256);
 
     function initialize(address, address, uint96, address) external;
 
@@ -16,15 +16,15 @@ interface IRewardReceiver {
 
     function withdraw() external;
 
-    function proposeNewComission(uint96) external;
+    function proposeNewCommission(uint96) external;
 
     function proposeNewWithdrawalThreshold(uint256) external;
 
-    function cancelNewComission() external;
+    function cancelNewCommission() external;
 
     function cancelNewWithdrawalThreshold() external;
 
-    function acceptNewComission() external;
+    function acceptNewCommission() external;
 
     function acceptNewWithdrawalThreshold() external;
 }

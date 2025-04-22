@@ -1,0 +1,16 @@
+{
+  "transactions": [
+    {
+      "rpc": "https://rpc.hoodi.ethpandaops.io"
+    },
+    {
+      "rpc": "https://rpc.hoodi.ethpandaops.io"
+    },
+    {
+      "rpc": "https://rpc.hoodi.ethpandaops.io"
+    },
+    {
+      "rpc": "https://rpc.hoodi.ethpandaops.io"
+    }
+  ]
+}
