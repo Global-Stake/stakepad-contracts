@@ -1,0 +1,12 @@
+# Foundry output
+out/
+broadcast/
+cache/
+artifacts/
+
+# Libraries (used via `forge install`)
+lib/
+
+# Slither reports
+slither-report.json
+slither.config.json
