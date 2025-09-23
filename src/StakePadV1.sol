@@ -144,7 +144,7 @@ contract StakePadV1 is IStakePad, Initializable, UUPSUpgradeable, OwnableUpgrade
         address withdrawalCredentialsAddress = address(bytes20(withdrawalCredentials[12:]));
 
         require(
-            _isRegisteredRewardReceiver(withdrawalCredentialsAddress) && uint8(bytes1(withdrawalCredentials[:1])) == 1,
+            _isRegisteredRewardReceiver(withdrawalCredentialsAddress) && uint8(bytes1(withdrawalCredentials[:1])) == 2,
             "StakePadV1: invalid withdrawal_credentials"
         );
     }

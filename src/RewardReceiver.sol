@@ -4,6 +4,7 @@ pragma solidity 0.8.18;
 
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "./interfaces/IRewardReceiver.sol";
 
 /**
@@ -11,7 +12,7 @@ import "./interfaces/IRewardReceiver.sol";
  * @author Quantum3 Labs
  * @notice Contract will be used with Clones library
  */
-contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable {
+contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable {
     uint96 public constant BASIS_PTS = 10000;
     uint256 public constant INIT_WITHDRAWAL_THRESHOLD =
         0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff; // max(type(uint256))
@@ -73,6 +74,7 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable {
         __Client_init(newClient);
         __Provider_init(newProvider);
         __Ownable_init();
+        __ReentrancyGuard_init();
         __stakePad_init(newStakePad);
         __initializeRewardReceiver(newComission);
     }
@@ -80,7 +82,7 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable {
     /**
      * @notice Withdraws the rewards to the client and the comission to the provider
      */
-    function withdraw() external onlyOwnerClientOrProvider notPendingState {
+    function withdraw() external onlyOwnerClientOrProvider notPendingState nonReentrant {
         uint256 balance = address(this).balance;
         uint256 weightedComission;
         uint256 rewards;
