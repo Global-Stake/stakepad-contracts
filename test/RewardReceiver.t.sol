@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.18;
+pragma solidity 0.8.22;
 
 import "./Utils.t.sol";
 import "../src/RewardReceiver.sol";
@@ -45,12 +45,12 @@ contract RewardReceiverTest is TestUtils {
     function testTransferOwnership() public {
         // fails to transfer ownership when not the owner
         vm.prank(client);
-        vm.expectRevert("Ownable: caller is not the owner");
+        vm.expectRevert(abi.encodeWithSelector(0x118cdaa7, client));
         rewardReceiver.transferOwnership(account1);
 
         // fails to transfer ownership to the zero address
         vm.prank(owner);
-        vm.expectRevert("Ownable: new owner is the zero address");
+        vm.expectRevert(abi.encodeWithSelector(0x1e4fbdf7, address(0)));
         rewardReceiver.transferOwnership(address(0));
 
         // succeeds to transfer ownership to a new address
@@ -69,7 +69,7 @@ contract RewardReceiverTest is TestUtils {
 
     function testCannotInitializeTwice() public {
         vm.startPrank(owner);
-        vm.expectRevert("Initializable: contract is already initialized");
+        vm.expectRevert(abi.encodeWithSelector(0xf92ee8a9));
         rewardReceiver.initialize(client, provider, comission, testStakePad);
         vm.stopPrank();
     }
@@ -567,7 +567,7 @@ contract RewardReceiverTest is TestUtils {
 
     function testChangeStakePad() public {
         vm.prank(client);
-        vm.expectRevert("Ownable: caller is not the owner");
+        vm.expectRevert(abi.encodeWithSelector(0x118cdaa7, client));
         rewardReceiver.changeStakePad(testStakePad);
 
         vm.prank(owner);

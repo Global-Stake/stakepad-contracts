@@ -1,4 +1,4 @@
-pragma solidity 0.8.18;
+pragma solidity 0.8.22;
 
 import "forge-std/test.sol";
 import "../src/RewardReceiver.sol";
@@ -39,7 +39,7 @@ contract StakePadTest is TestUtils {
 
         // cant initialized anymore
         vm.prank(owner);
-        vm.expectRevert("Initializable: contract is already initialized");
+        vm.expectRevert(abi.encodeWithSelector(0xf92ee8a9));
         stakePad.initialize(address(rewardReceiverImpl));
 
         // cant initialize with zero address
@@ -64,7 +64,7 @@ contract StakePadTest is TestUtils {
         require(stakePad.owner() == account1, "Owner address is not set correctly");
 
         vm.prank(account1);
-        vm.expectRevert("Ownable: new owner is the zero address");
+        vm.expectRevert(abi.encodeWithSelector(0x1e4fbdf7, address(0)));
         stakePad.transferOwnership(address(0));
     }
 
@@ -114,8 +114,8 @@ contract StakePadTest is TestUtils {
 
     function testUpgradeTo() public {
         StakePadV1 newStakePad = new StakePadV1(BEACON_DEPOSIT_CONTRACT_ADDRESS);
-        vm.expectRevert("Function must be called through delegatecall");
-        stakePad.upgradeTo(address(newStakePad));
+        vm.expectRevert(abi.encodeWithSelector(0xe07c8dba));
+        stakePad.upgradeToAndCall(address(newStakePad), new bytes(0)); //review call payload
     }
 
     function testFundValidators() public {
@@ -173,7 +173,7 @@ contract StakePadTest is TestUtils {
 
     function testOthers() public {
         vm.prank(account1);
-        vm.expectRevert("Function must be called through delegatecall");
+        vm.expectRevert(abi.encodeWithSelector(0xe07c8dba));
         stakePad.upgradeToAndCall(address(0), new bytes(0));
 
         vm.prank(account1);

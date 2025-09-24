@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.18;
+pragma solidity 0.8.22;
 
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -73,7 +73,7 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
     {
         __Client_init(newClient);
         __Provider_init(newProvider);
-        __Ownable_init();
+        __Ownable_init(msg.sender);
         __ReentrancyGuard_init();
         __stakePad_init(newStakePad);
         __initializeRewardReceiver(newComission);
