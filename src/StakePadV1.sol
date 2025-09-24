@@ -61,7 +61,7 @@ contract StakePadV1 is IStakePad, Initializable, UUPSUpgradeable, OwnableUpgrade
      * @param provider Account on behalf of this contract
      * @param comission percentage of the rewards that will be sent to the provider
      */
-    function deployNewRewardReceiver(address client, address provider, uint96 comission) external override onlyOwner {
+    function deployNewRewardReceiver(address client, address provider, uint96 comission) external override {
         address newRewardReceiver = Clones.clone(rewardReceiverImpl());
         IRewardReceiver(newRewardReceiver).initialize(client, provider, comission, address(this));
         IRewardReceiver(newRewardReceiver).transferOwnership(owner());
