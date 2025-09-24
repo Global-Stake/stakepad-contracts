@@ -1,4 +1,4 @@
-pragma solidity 0.8.18;
+pragma solidity 0.8.22;
 
 import "../src/StakePadV1.sol";
 import "../src/StakePadUpgradeableProxy.sol";
@@ -30,13 +30,13 @@ contract StakePadTest is TestUtils {
     }
 
     function testCannotInitializeAgain() public {
-        vm.expectRevert("Initializable: contract is already initialized");
+        vm.expectRevert(abi.encodeWithSelector(0xf92ee8a9));
         StakePadV1(address(stakePadProxy)).initialize(address(0x1));
     }
 
     function testUpgradeability() public {
         StakePadV1 newStakePad = new StakePadV1(address(mockDepositContract));
-        StakePadV1(address(stakePadProxy)).upgradeTo(address(newStakePad));
+        StakePadV1(address(stakePadProxy)).upgradeToAndCall(address(newStakePad), new bytes(0)); //review call payload
         require(stakePadProxy.implementation() == address(newStakePad), "StakePadV1: upgradeTo not working");
         require(StakePadV1(address(stakePadProxy)).owner() == address(this));
         require(address(StakePadV1(address(stakePadProxy)).beaconDeposit()) == address(mockDepositContract));
@@ -45,11 +45,11 @@ contract StakePadTest is TestUtils {
         MockDepositContract newMockDepositContract = new MockDepositContract();
         newStakePad = new StakePadV1(address(newMockDepositContract));
         RewardReceiver newRewardReceiverImpl = new RewardReceiver();
-        vm.expectRevert("Initializable: contract is already initialized");
+        vm.expectRevert(abi.encodeWithSelector(0xf92ee8a9));
         StakePadV1(address(stakePadProxy)).upgradeToAndCall(
             address(newStakePad), abi.encodeWithSignature("initialize(address)", address(newRewardReceiverImpl))
         );
-        StakePadV1(address(stakePadProxy)).upgradeTo(address(newStakePad));
+        StakePadV1(address(stakePadProxy)).upgradeToAndCall(address(newStakePad), new bytes(0)); //review call payload
         require(address(StakePadV1(address(stakePadProxy)).beaconDeposit()) == address(newMockDepositContract));
         require(StakePadV1(address(stakePadProxy)).rewardReceiverImpl() == address(rewardReceiverImpl));
     }

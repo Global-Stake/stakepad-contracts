@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.18;
+pragma solidity 0.8.22;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -38,7 +38,7 @@ contract TestStakePadV2 is IStakePad, Initializable, UUPSUpgradeable, OwnableUpg
      */
     function initialize(address newRewardReceiverImpl) external initializer {
         _updateRewardReceiverImpl(newRewardReceiverImpl);
-        __Ownable_init();
+        __Ownable_init(msg.sender);
     }
 
     /**
