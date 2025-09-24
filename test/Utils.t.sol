@@ -36,6 +36,7 @@ contract TestUtils is Test {
             depositData.withdrawal_credentials = new bytes(32);
             depositData.signature = new bytes(96);
             depositData.deposit_data_root = bytes32(keccak256("RANDOM_DEPOSIT_DATA_ROOT"));
+            depositData.depositValue = 32 ether;
             depositDataArray[i] = depositData;
         }
         size = depositDataArray.length;
@@ -64,9 +65,9 @@ contract TestUtils is Test {
         ret[7] = bytesValue[0];
     }
 
-    // returns 32 bytes of padded account with 0x01 at the top
+    // returns 32 bytes of padded account with 0x02 at the top
     function _withdrawalCredentialsFromAddress(address addr) internal pure returns (bytes memory) {
-        return abi.encodePacked(bytes1(0x01), bytes11(0x0), bytes20(addr));
+        return abi.encodePacked(bytes1(0x02), bytes11(0x0), bytes20(addr));
     }
 
     function testOk() public {}

@@ -70,16 +70,23 @@ contract StakePadV1 is IStakePad, Initializable, UUPSUpgradeable, OwnableUpgrade
     }
 
     /**
-     * @notice funds a set of validators with 32 ETH each
+     * @notice funds a set of validators with specified ETH amounts (32-2048 ETH each)
      * @param DepositDataArray Array of DepositData. See StakePadUtils.sol
      */
     function fundValidators(StakePadUtils.BeaconDepositParams[] calldata DepositDataArray) external payable override {
-        require(msg.value == 32 ether * DepositDataArray.length, "StakePadV1: incorrect amount of ETH");
+        uint256 totalRequiredETH = 0;
+        for (uint256 i = 0; i < DepositDataArray.length; ++i) {
+            uint256 depositValue = DepositDataArray[i].depositValue;
+            require(depositValue >= 32 ether && depositValue <= 2048 ether, "StakePadV1: deposit must be between 32 and 2048 ETH");
+            totalRequiredETH += depositValue;
+        }
+        require(msg.value == totalRequiredETH, "StakePadV1: incorrect amount of ETH");
+
         for (uint256 i = 0; i < DepositDataArray.length; ++i) {
             StakePadUtils.BeaconDepositParams calldata DepositData = DepositDataArray[i];
             _validateWithdrawalCredentials(DepositData.withdrawal_credentials);
             _addValidatorPubKey(DepositData.pubkey, DepositData.withdrawal_credentials);
-            beaconDeposit.deposit{value: 32 ether}(
+            beaconDeposit.deposit{value: DepositData.depositValue}(
                 DepositData.pubkey,
                 DepositData.withdrawal_credentials,
                 DepositData.signature,
@@ -144,7 +151,7 @@ contract StakePadV1 is IStakePad, Initializable, UUPSUpgradeable, OwnableUpgrade
         address withdrawalCredentialsAddress = address(bytes20(withdrawalCredentials[12:]));
 
         require(
-            _isRegisteredRewardReceiver(withdrawalCredentialsAddress) && uint8(bytes1(withdrawalCredentials[:1])) == 1,
+            _isRegisteredRewardReceiver(withdrawalCredentialsAddress) && uint8(bytes1(withdrawalCredentials[:1])) == 2,
             "StakePadV1: invalid withdrawal_credentials"
         );
     }

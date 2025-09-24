@@ -8,5 +8,6 @@ library StakePadUtils {
         bytes withdrawal_credentials;
         bytes signature;
         bytes32 deposit_data_root;
+        uint256 depositValue;
     }
 }
