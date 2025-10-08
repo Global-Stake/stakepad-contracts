@@ -33,12 +33,12 @@ contract TestStakePadV1 is IStakePad, Initializable, UUPSUpgradeable, OwnableUpg
         __Ownable_init(msg.sender);
     }
 
-    function deployNewRewardReceiver(address client, address provider, uint96 comission) external override {
+    function deployNewRewardReceiver(address client, address provider, uint96 commission) external override {
         address newRewardReceiver = Clones.clone(rewardReceiverImpl());
-        IRewardReceiver(newRewardReceiver).initialize(client, provider, comission, address(this));
+        IRewardReceiver(newRewardReceiver).initialize(client, provider, commission, address(this));
         IRewardReceiver(newRewardReceiver).transferOwnership(owner());
         _rewardReceivers.add(newRewardReceiver);
-        emit NewRewardReceiver(_rewardReceivers.length(), newRewardReceiver, client, provider, comission);
+        emit NewRewardReceiver(_rewardReceivers.length(), newRewardReceiver, client, provider, commission);
     }
 
     /**

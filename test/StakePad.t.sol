@@ -87,10 +87,10 @@ contract StakePadTest is TestUtils {
     function testDeployRewardReceivers() public {
         address client = account1;
         address provider = account2;
-        uint96 comission = 1000;
+        uint96 commission = 1000;
         vm.prank(owner);
         vm.recordLogs();
-        stakePad.deployNewRewardReceiver(client, provider, comission);
+        stakePad.deployNewRewardReceiver(client, provider, commission);
         Vm.Log[] memory entries = vm.getRecordedLogs();
         (address newRewardReceiver,,,) =
             abi.decode(entries[entries.length - 1].data, (address, address, address, uint96));
@@ -102,7 +102,7 @@ contract StakePadTest is TestUtils {
         require(
             RewardReceiver(payable(newRewardReceiver)).provider() == provider, "Provider address is not set correctly"
         );
-        require(RewardReceiver(payable(newRewardReceiver)).comission() == comission, "Comission is not set correctly");
+        require(RewardReceiver(payable(newRewardReceiver)).commission() == commission, "Commission is not set correctly");
         require(RewardReceiver(payable(newRewardReceiver)).owner() == owner, "Owner address is not set correctly");
     }
 
@@ -128,10 +128,10 @@ contract StakePadTest is TestUtils {
 
         address client = account1;
         address provider = account2;
-        uint96 comission = 1000;
+        uint96 commission = 1000;
         vm.prank(owner);
         vm.recordLogs();
-        stakePad.deployNewRewardReceiver(client, provider, comission);
+        stakePad.deployNewRewardReceiver(client, provider, commission);
         Vm.Log[] memory entries = vm.getRecordedLogs();
         (address newRewardReceiver,,,) =
             abi.decode(entries[entries.length - 1].data, (address, address, address, uint96));

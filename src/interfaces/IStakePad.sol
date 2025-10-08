@@ -5,7 +5,7 @@ import "../utils/StakePadUtils.sol";
 
 interface IStakePad {
     event NewRewardReceiver(
-        uint256 indexed index, address rewardReceiver, address client, address provider, uint96 comission
+        uint256 indexed index, address rewardReceiver, address client, address provider, uint96 commission
     );
 
     function fundValidators(StakePadUtils.BeaconDepositParams[] memory) external payable;
