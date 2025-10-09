@@ -22,7 +22,7 @@ contract TestUtils is Test {
     address public account3 = vm.addr(6);
     address public testStakePad = vm.addr(7);
 
-    uint96 comission = 1000; // 10% comission
+    uint96 commission = 1000; // 10% commission
 
     function _getRandomDepositParams(uint256 amount)
         internal

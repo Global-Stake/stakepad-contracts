@@ -26,7 +26,7 @@ contract RewardReceiverTest is TestUtils {
         // perform operations from owner
         vm.startPrank(owner);
         rewardReceiver = new RewardReceiver();
-        rewardReceiver.initialize(client, provider, comission, testStakePad);
+        rewardReceiver.initialize(client, provider, commission, testStakePad);
         vm.stopPrank();
     }
 
@@ -37,8 +37,8 @@ contract RewardReceiverTest is TestUtils {
             "provider not set correctly"
         );
         require(
-            rewardReceiver.comission() == comission,
-            "comission not set correctly"
+            rewardReceiver.commission() == commission,
+            "commission not set correctly"
         );
     }
 
@@ -70,7 +70,7 @@ contract RewardReceiverTest is TestUtils {
     function testCannotInitializeTwice() public {
         vm.startPrank(owner);
         vm.expectRevert(abi.encodeWithSelector(0xf92ee8a9));
-        rewardReceiver.initialize(client, provider, comission, testStakePad);
+        rewardReceiver.initialize(client, provider, commission, testStakePad);
         vm.stopPrank();
     }
 
@@ -82,14 +82,14 @@ contract RewardReceiverTest is TestUtils {
         testRewardReceiver.initialize(
             address(0),
             provider,
-            comission,
+            commission,
             testStakePad
         );
         vm.expectRevert("RewardReceiver: provider is the zero address");
         testRewardReceiver.initialize(
             client,
             address(0),
-            comission,
+            commission,
             testStakePad
         );
         vm.expectRevert("RewardReceiver: invalid percentage");
@@ -97,60 +97,60 @@ contract RewardReceiverTest is TestUtils {
         vm.expectRevert("RewardReceiver: invalid percentage");
         testRewardReceiver.initialize(client, provider, 0, testStakePad);
         vm.expectRevert("RewardReceiver: stakePad is the zero address");
-        testRewardReceiver.initialize(client, provider, comission, address(0));
+        testRewardReceiver.initialize(client, provider, commission, address(0));
 
         // passing correct params should work
         testRewardReceiver.initialize(
             client,
             provider,
-            comission,
+            commission,
             testStakePad
         );
     }
 
-    function testMigrateComission() public {
-        // fails to propose a newComission when not the owner or provider
+    function testMigrateCommission() public {
+        // fails to propose a newCommission when not the owner or provider
         vm.prank(client);
         vm.expectRevert("RewardReceiver: caller is not the owner or provider");
-        rewardReceiver.proposeNewComission(comission * 2);
+        rewardReceiver.proposeNewCommission(commission * 2);
 
-        // fails to propose a newComission when new comission is 0
+        // fails to propose a newCommission when new commission is 0
         vm.prank(owner);
         vm.expectRevert("RewardReceiver: invalid percentage");
-        rewardReceiver.proposeNewComission(0);
+        rewardReceiver.proposeNewCommission(0);
 
-        // fails to propose a newComission when new comission more than 100%
+        // fails to propose a newCommission when new commission more than 100%
         vm.prank(owner);
         vm.expectRevert("RewardReceiver: invalid percentage");
-        rewardReceiver.proposeNewComission(10001);
+        rewardReceiver.proposeNewCommission(10001);
 
-        // faiils to accept a comission when the comission is 0
+        // faiils to accept a commission when the commission is 0
         vm.prank(client);
         vm.expectRevert("RewardReceiver: invalid percentage");
-        rewardReceiver.acceptNewComission();
+        rewardReceiver.acceptNewCommission();
 
-        // accepts a new incoming comission
+        // accepts a new incoming commission
         uint256 ss = vm.snapshot();
         vm.prank(owner);
-        rewardReceiver.proposeNewComission(comission * 2);
+        rewardReceiver.proposeNewCommission(commission * 2);
         vm.prank(client);
-        rewardReceiver.acceptNewComission();
+        rewardReceiver.acceptNewCommission();
 
         require(
-            rewardReceiver.comission() == comission * 2,
-            "comission not updated correctly"
+            rewardReceiver.commission() == commission * 2,
+            "commission not updated correctly"
         );
 
-        // allows provider to also propose new comission
+        // allows provider to also propose new commission
         vm.revertTo(ss);
         vm.prank(provider);
-        rewardReceiver.proposeNewComission(comission * 2);
+        rewardReceiver.proposeNewCommission(commission * 2);
         vm.prank(client);
-        rewardReceiver.acceptNewComission();
+        rewardReceiver.acceptNewCommission();
 
         require(
-            rewardReceiver.comission() == comission * 2,
-            "comission not updated correctly"
+            rewardReceiver.commission() == commission * 2,
+            "commission not updated correctly"
         );
     }
 
@@ -209,7 +209,7 @@ contract RewardReceiverTest is TestUtils {
         newRewardReceiver.initialize(
             address(sampleAttackContract),
             provider,
-            comission,
+            commission,
             testStakePad
         );
         vm.prank(owner);
@@ -261,7 +261,7 @@ contract RewardReceiverTest is TestUtils {
 
         // fails to withdraw when balance is too low
         vm.prank(owner);
-        vm.expectRevert("RewardReceiver: comission too low");
+        vm.expectRevert("RewardReceiver: commission too low");
         rewardReceiver.withdraw();
 
         // fails if the transfer function fails
@@ -271,7 +271,7 @@ contract RewardReceiverTest is TestUtils {
         testRewardReceiver.initialize(
             address(sampleContractWithdrawer),
             provider,
-            comission,
+            commission,
             testStakePad
         );
         vm.deal(address(testRewardReceiver), TEST_WITHDRAWAL_THRESHOLD * 2);
@@ -286,7 +286,7 @@ contract RewardReceiverTest is TestUtils {
         testRewardReceiver.initialize(
             address(sampleContractWithdrawerReceive),
             provider,
-            comission,
+            commission,
             testStakePad
         );
         vm.deal(address(testRewardReceiver), TEST_WITHDRAWAL_THRESHOLD * 2);
@@ -313,7 +313,7 @@ contract RewardReceiverTest is TestUtils {
         // ----PERFORM CHECKS----
         require(
             providerBalanceBefore +
-                (rewardReceiverBalanceBefore * rewardReceiver.comission()) /
+                (rewardReceiverBalanceBefore * rewardReceiver.commission()) /
                 BASIS_PTS ==
                 providerBalanceAfter,
             "withdrawn amount not correct"
@@ -322,7 +322,7 @@ contract RewardReceiverTest is TestUtils {
         require(
             clientBalanceBefore +
                 rewardReceiverBalanceBefore -
-                (rewardReceiverBalanceBefore * rewardReceiver.comission()) /
+                (rewardReceiverBalanceBefore * rewardReceiver.commission()) /
                 BASIS_PTS ==
                 clientBalanceAfter,
             "withdrawn amount not correct"
@@ -338,7 +338,7 @@ contract RewardReceiverTest is TestUtils {
 
         // ----PERFORM CALL--- FAILS
         vm.prank(owner);
-        vm.expectRevert("RewardReceiver: comission too low");
+        vm.expectRevert("RewardReceiver: commission too low");
         rewardReceiver.withdraw();
 
         // CHECK AMOUNTS transferred
@@ -369,7 +369,7 @@ contract RewardReceiverTest is TestUtils {
         require(
             providerBalanceBefore +
                 ((rewardReceiverBalanceBefore - TEST_WITHDRAWAL_THRESHOLD) *
-                    rewardReceiver.comission()) /
+                    rewardReceiver.commission()) /
                 BASIS_PTS ==
                 providerBalanceAfter,
             "withdrawn amount not correct"
@@ -379,7 +379,7 @@ contract RewardReceiverTest is TestUtils {
             clientBalanceBefore +
                 (rewardReceiverBalanceBefore) -
                 ((rewardReceiverBalanceBefore - TEST_WITHDRAWAL_THRESHOLD) *
-                    rewardReceiver.comission()) /
+                    rewardReceiver.commission()) /
                 BASIS_PTS ==
                 clientBalanceAfter,
             "withdrawn amount not correct"
@@ -389,7 +389,7 @@ contract RewardReceiverTest is TestUtils {
     function testCannotWithdrawWhenPending() public {
         vm.deal(address(rewardReceiver), 16 ether);
         vm.prank(owner);
-        rewardReceiver.proposeNewComission(comission * 2);
+        rewardReceiver.proposeNewCommission(commission * 2);
         vm.prank(client);
         vm.expectRevert("RewardReceiver: pending state");
         rewardReceiver.withdraw();
@@ -403,14 +403,14 @@ contract RewardReceiverTest is TestUtils {
         rewardReceiver.withdraw();
     }
 
-    function testCancelPendingComissionAndWithdrawalThreshold() public {
-        require(rewardReceiver.pendingComission() == 0);
+    function testCancelPendingCommissionAndWithdrawalThreshold() public {
+        require(rewardReceiver.pendingCommission() == 0);
         vm.prank(owner);
-        rewardReceiver.proposeNewComission(comission * 2);
-        require(rewardReceiver.pendingComission() == comission * 2);
+        rewardReceiver.proposeNewCommission(commission * 2);
+        require(rewardReceiver.pendingCommission() == commission * 2);
         vm.prank(provider);
-        rewardReceiver.cancelNewComission();
-        require(rewardReceiver.pendingComission() == 0);
+        rewardReceiver.cancelNewCommission();
+        require(rewardReceiver.pendingCommission() == 0);
 
         require(rewardReceiver.pendingWithdrawalThreshold() == 0);
         vm.prank(owner);
@@ -426,7 +426,7 @@ contract RewardReceiverTest is TestUtils {
     }
 
     function testFuzzWithdrawal(uint256 balanceOfContract) public {
-        vm.assume(balanceOfContract < MAX_UINT / rewardReceiver.comission());
+        vm.assume(balanceOfContract < MAX_UINT / rewardReceiver.commission());
         // CHECK AMOUNTS transferred
         vm.deal(address(rewardReceiver), balanceOfContract);
 
@@ -443,23 +443,23 @@ contract RewardReceiverTest is TestUtils {
         uint256 clientBalanceBefore = address(client).balance;
 
         // CALCUATE EXPECTED AMOUNTS
-        uint256 comission;
+        uint256 commission;
 
         if (balanceOfContract > TEST_WITHDRAWAL_THRESHOLD) {
-            comission =
+            commission =
                 ((balanceOfContract - TEST_WITHDRAWAL_THRESHOLD) *
-                    rewardReceiver.comission()) /
+                    rewardReceiver.commission()) /
                 BASIS_PTS;
         } else {
-            comission =
-                (balanceOfContract * rewardReceiver.comission()) /
+            commission =
+                (balanceOfContract * rewardReceiver.commission()) /
                 BASIS_PTS;
         }
 
         // ----PERFORM CALL WITH CONDITIONAL REVERT---
         vm.prank(owner);
-        if (comission == 0) {
-            vm.expectRevert("RewardReceiver: comission too low");
+        if (commission == 0) {
+            vm.expectRevert("RewardReceiver: commission too low");
             rewardReceiver.withdraw();
         } else {
             rewardReceiver.withdraw();
@@ -471,7 +471,7 @@ contract RewardReceiverTest is TestUtils {
 
             // ----PERFORM CHECKS----
             require(
-                providerBalanceBefore + comission == providerBalanceAfter,
+                providerBalanceBefore + commission == providerBalanceAfter,
                 "withdrawn amount not correct"
             );
             require(
@@ -479,7 +479,7 @@ contract RewardReceiverTest is TestUtils {
                 "rewardReceiver not empty"
             );
             require(
-                clientBalanceBefore + balanceOfContract - comission ==
+                clientBalanceBefore + balanceOfContract - commission ==
                     clientBalanceAfter,
                 "withdrawn amount not correct"
             );
@@ -579,14 +579,14 @@ contract RewardReceiverTest is TestUtils {
         );
     }
 
-    function testFuzzMigrateComissionOrThreshold(
-        uint96 newInputComission,
+    function testFuzzMigrateCommissionOrThreshold(
+        uint96 newInputCommission,
         uint96 newInputThreshold
     ) public {
-        if (newInputComission > BASIS_PTS || newInputComission == 0) {
+        if (newInputCommission > BASIS_PTS || newInputCommission == 0) {
             vm.prank(owner);
             vm.expectRevert("RewardReceiver: invalid percentage");
-            rewardReceiver.proposeNewComission(newInputComission);
+            rewardReceiver.proposeNewCommission(newInputCommission);
         } else {
             if (newInputThreshold == 0) {
                 vm.prank(owner);
@@ -594,25 +594,25 @@ contract RewardReceiverTest is TestUtils {
                 rewardReceiver.proposeNewWithdrawalThreshold(newInputThreshold);
             } else {
                 vm.prank(owner);
-                rewardReceiver.proposeNewComission(newInputComission);
+                rewardReceiver.proposeNewCommission(newInputCommission);
                 vm.prank(owner);
                 rewardReceiver.proposeNewWithdrawalThreshold(newInputThreshold);
                 vm.prank(client);
                 rewardReceiver.acceptNewWithdrawalThreshold();
                 vm.prank(client);
-                rewardReceiver.acceptNewComission();
+                rewardReceiver.acceptNewCommission();
 
                 require(
-                    rewardReceiver.comission() == newInputComission,
-                    "comission not updated correctly"
+                    rewardReceiver.commission() == newInputCommission,
+                    "commission not updated correctly"
                 );
                 require(
                     rewardReceiver.withdrawalThreshold() == newInputThreshold,
                     "withdrawalThreshold not updated correctly"
                 );
                 require(
-                    rewardReceiver.pendingComission() == 0,
-                    "pendingComission not updated correctly"
+                    rewardReceiver.pendingCommission() == 0,
+                    "pendingCommission not updated correctly"
                 );
                 require(
                     rewardReceiver.pendingWithdrawalThreshold() == 0,

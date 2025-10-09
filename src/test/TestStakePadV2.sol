@@ -45,14 +45,14 @@ contract TestStakePadV2 is IStakePad, Initializable, UUPSUpgradeable, OwnableUpg
      * @notice creates a contract that will receive the rewards
      * @param client Beneficiary of the rewards
      * @param provider Account on behalf of this contract
-     * @param comission percentage of the rewards that will be sent to the provider
+     * @param commission percentage of the rewards that will be sent to the provider
      */
-    function deployNewRewardReceiver(address client, address provider, uint96 comission) external override onlyOwner {
+    function deployNewRewardReceiver(address client, address provider, uint96 commission) external override onlyOwner {
         address newRewardReceiver = Clones.clone(rewardReceiverImpl());
-        IRewardReceiver(newRewardReceiver).initialize(client, provider, comission, address(this));
+        IRewardReceiver(newRewardReceiver).initialize(client, provider, commission, address(this));
         IRewardReceiver(newRewardReceiver).transferOwnership(owner());
         _rewardReceivers.add(newRewardReceiver);
-        emit NewRewardReceiver(_rewardReceivers.length(), newRewardReceiver, client, provider, comission);
+        emit NewRewardReceiver(_rewardReceivers.length(), newRewardReceiver, client, provider, commission);
     }
 
     function setNewVariable(uint256 variable) external onlyOwner {
