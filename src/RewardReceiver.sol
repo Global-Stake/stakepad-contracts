@@ -14,11 +14,14 @@ import "./interfaces/IRewardReceiver.sol";
  */
 contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable {
     uint96 public constant BASIS_PTS = 10000;
-    uint256 public constant INIT_WITHDRAWAL_THRESHOLD =
-        0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff; // max(type(uint256))
+    uint256 public constant INIT_WITHDRAWAL_THRESHOLD = 0;
 
     uint96 public pendingCommission;
     uint256 public pendingWithdrawalThreshold;
+    uint256 public claimableClient;
+    uint256 public claimableProvider;
+    uint256 public totalClaimedClient;
+    uint256 public totalClaimedProvider;
     bytes[] public validators;
 
     address internal _client;
@@ -26,6 +29,7 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
     address internal _stakePad; // managed by stakepad NO MALICIOUS PROVIDER
     uint96 internal _commission;
     uint256 internal _withdrawalThreshold;
+    uint256 internal _feeAccountedRewards;
 
     modifier onlyOwnerClientOrProvider() {
         require(
@@ -65,7 +69,9 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
      * @dev execution layer rewards may be sent as plain ETH transfers
      * @dev withdrawals from consensus layer to be sent through balance increments
      */
-    receive() external payable {}
+    receive() external payable {
+        emit FundsReceived(_msgSender(), msg.value, address(this).balance);
+    }
 
     function initialize(address newClient, address newProvider, uint96 newCommission, address newStakePad)
         external
@@ -80,60 +86,99 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
     }
 
     /**
-     * @notice Withdraws the rewards to the client and the commission to the provider
+     * @notice Allocates newly received funds to client/provider claimable balances
      */
     function withdraw() external onlyOwnerClientOrProvider notPendingState nonReentrant {
-        uint256 balance = address(this).balance;
-        uint256 weightedCommission;
-        uint256 rewards;
-        if (balance > _withdrawalThreshold) {
-            weightedCommission = ((balance - _withdrawalThreshold) * _commission) / BASIS_PTS;
-        } else {
-            weightedCommission = (balance * _commission) / BASIS_PTS;
-        }
-        require(weightedCommission > 0, "RewardReceiver: commission too low");
-        rewards = balance - weightedCommission;
+        uint256 availableBalance = _unallocatedBalance();
+        require(availableBalance > 0, "RewardReceiver: no funds to allocate");
 
-        // transfer to provider first for safety
-        (bool success1,) = address(_provider).call{value: weightedCommission}("");
-        (bool success0,) = address(_client).call{value: rewards}("");
+        uint256 totalReceived = address(this).balance + totalClaimedClient + totalClaimedProvider;
+        uint256 totalRewards = totalReceived > _withdrawalThreshold ? totalReceived - _withdrawalThreshold : 0;
+        uint256 grossRewards = totalRewards > _feeAccountedRewards ? totalRewards - _feeAccountedRewards : 0;
+        uint256 weightedCommission = (grossRewards * _commission) / BASIS_PTS;
 
-        emit RewardSent(_client, rewards);
-        emit CommissionSent(_provider, weightedCommission);
+        require(weightedCommission <= availableBalance, "RewardReceiver: invalid accounting");
 
-        require(success0 && success1, "RewardReceiver: transfer failed");
+        uint256 clientAmount = availableBalance - weightedCommission;
+        uint256 principalAmount = availableBalance > grossRewards ? availableBalance - grossRewards : 0;
+
+        claimableClient += clientAmount;
+        claimableProvider += weightedCommission;
+        _feeAccountedRewards = totalRewards;
+
+        emit WithdrawalAllocated(
+            _client, _provider, principalAmount, grossRewards, weightedCommission, clientAmount, weightedCommission
+        );
+    }
+
+    function claimClient() external {
+        claimClient(payable(_client));
+    }
+
+    function claimClient(address payable recipient) public onlyClient nonReentrant {
+        require(recipient != address(0), "RewardReceiver: recipient is the zero address");
+
+        uint256 amount = claimableClient;
+        require(amount > 0, "RewardReceiver: nothing to claim");
+
+        claimableClient = 0;
+        totalClaimedClient += amount;
+
+        (bool success,) = recipient.call{value: amount}("");
+        require(success, "RewardReceiver: transfer failed");
+
+        emit ClientClaimed(_client, recipient, amount);
+    }
+
+    function claimProvider() external {
+        claimProvider(payable(_provider));
+    }
+
+    function claimProvider(address payable recipient) public nonReentrant {
+        require(provider() == _msgSender(), "RewardReceiver: caller is not the provider");
+        _claimProvider(recipient);
     }
 
     function proposeNewCommission(uint96 newCommission) external onlyOwnerOrProvider {
         _checkValidPercentange(newCommission);
         pendingCommission = newCommission;
+        emit CommissionProposed(_msgSender(), newCommission);
     }
 
     function proposeNewWithdrawalThreshold(uint256 newWithdrawalThreshold) external onlyOwnerOrProvider {
         _checkValidWithdrawalThreshold(newWithdrawalThreshold);
         pendingWithdrawalThreshold = newWithdrawalThreshold;
+        emit WithdrawalThresholdProposed(_msgSender(), newWithdrawalThreshold);
     }
 
     function acceptNewCommission() external onlyClient {
         _checkValidPercentange(pendingCommission);
+        uint96 previousCommission = _commission;
         _commission = pendingCommission;
         pendingCommission = 0;
+        emit CommissionAccepted(_msgSender(), previousCommission, _commission);
     }
 
     function acceptNewWithdrawalThreshold() external onlyClient {
         _checkValidWithdrawalThreshold(pendingWithdrawalThreshold);
+        uint256 previousWithdrawalThreshold = _withdrawalThreshold;
         _withdrawalThreshold = pendingWithdrawalThreshold;
         pendingWithdrawalThreshold = 0;
+        emit WithdrawalThresholdAccepted(_msgSender(), previousWithdrawalThreshold, _withdrawalThreshold);
     }
 
     function cancelNewCommission() external onlyOwnerOrProvider {
         _checkValidPercentange(pendingCommission);
+        uint96 cancelledCommission = pendingCommission;
         pendingCommission = 0;
+        emit CommissionCancelled(_msgSender(), cancelledCommission);
     }
 
     function cancelNewWithdrawalThreshold() external onlyOwnerOrProvider {
         _checkValidWithdrawalThreshold(pendingWithdrawalThreshold);
+        uint256 cancelledWithdrawalThreshold = pendingWithdrawalThreshold;
         pendingWithdrawalThreshold = 0;
+        emit WithdrawalThresholdCancelled(_msgSender(), cancelledWithdrawalThreshold);
     }
 
     function commission() external view returns (uint96) {
@@ -145,29 +190,57 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
     }
 
     function addValidator(bytes memory pubkey) external onlyStakePadOrProviderOrAdmin {
+        _addValidator(pubkey, 0);
+    }
+
+    function addValidator(bytes memory pubkey, uint256 protectedPrincipal) external onlyStakePadOrProviderOrAdmin {
+        _addValidator(pubkey, protectedPrincipal);
+    }
+
+    function feeAccountedRewards() external view returns (uint256) {
+        return _feeAccountedRewards;
+    }
+
+    function unallocatedBalance() external view returns (uint256) {
+        return _unallocatedBalance();
+    }
+
+    function lifetimeReceived() external view returns (uint256) {
+        return address(this).balance + totalClaimedClient + totalClaimedProvider;
+    }
+
+    function _addValidator(bytes memory pubkey, uint256 protectedPrincipal) internal {
         validators.push(pubkey);
+        _withdrawalThreshold += protectedPrincipal;
+        emit ValidatorAdded(pubkey, protectedPrincipal, _withdrawalThreshold);
     }
 
     function removeValidator(uint256 index) external onlyStakePadOrProviderOrAdmin {
         uint256 len = validators.length;
         require(index < len, "RewardReceiver : invalid index");
+        bytes memory removedValidator = validators[index];
         if (index != len - 1) {
             validators[index] = validators[len - 1];
         }
         validators.pop();
+        emit ValidatorRemoved(index, removedValidator);
     }
 
     function changeStakePad(address newStakePad) external onlyOwner {
+        require(newStakePad != address(0), "RewardReceiver: stakePad is the zero address");
+        address previousStakePad = _stakePad;
         _stakePad = newStakePad;
+        emit StakePadChanged(previousStakePad, newStakePad);
     }
 
     function percentageWithdraw(uint96 percentage) external onlyOwner {
         _checkValidPercentange(percentage);
-        uint256 balance = address(this).balance;
+        uint256 balance = _unallocatedBalance();
         uint256 amounToWithdraw = (balance * percentage) / BASIS_PTS;
         require(amounToWithdraw > 0, "RewardReceiver: amount too low");
         (bool success,) = address(_provider).call{value: amounToWithdraw}("");
         require(success, "RewardReceiver: transfer failed");
+        emit PercentageWithdrawn(_msgSender(), _provider, percentage, amounToWithdraw);
     }
 
     function getValidators() external view returns (bytes[] memory) {
@@ -213,6 +286,30 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
         _checkValidPercentange(newCommission);
         _commission = newCommission;
         _withdrawalThreshold = INIT_WITHDRAWAL_THRESHOLD;
+    }
+
+    function _claimProvider(address payable recipient) internal {
+        require(recipient != address(0), "RewardReceiver: recipient is the zero address");
+
+        uint256 amount = claimableProvider;
+        require(amount > 0, "RewardReceiver: nothing to claim");
+
+        claimableProvider = 0;
+        totalClaimedProvider += amount;
+
+        (bool success,) = recipient.call{value: amount}("");
+        require(success, "RewardReceiver: transfer failed");
+
+        emit ProviderClaimed(_provider, recipient, amount);
+    }
+
+    function _unallocatedBalance() internal view returns (uint256) {
+        uint256 allocatedBalance = claimableClient + claimableProvider;
+        uint256 balance = address(this).balance;
+
+        require(balance >= allocatedBalance, "RewardReceiver: insufficient balance");
+
+        return balance - allocatedBalance;
     }
 
     function _checkValidPercentange(uint96 newPercentage) internal pure {

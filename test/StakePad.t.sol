@@ -1,6 +1,6 @@
 pragma solidity 0.8.22;
 
-import "forge-std/test.sol";
+import "forge-std/Test.sol";
 import "../src/RewardReceiver.sol";
 import "../src/StakePadV1.sol";
 import "../src/mocks/MockDepositContract.sol";
@@ -166,9 +166,63 @@ contract StakePadTest is TestUtils {
         entries = vm.getRecordedLogs();
 
         // check logs
-        require(entries.length == 1, "Incorrect number of events");
-        (,,,, bytes memory index) = abi.decode(entries[0].data, (bytes, bytes, bytes, bytes, bytes));
+        require(entries.length == 2, "Incorrect number of events");
+        (,,,, bytes memory index) = abi.decode(entries[1].data, (bytes, bytes, bytes, bytes, bytes));
         require(uint64(bytes8(_toBigEndian64(uint64(bytes8(index))))) == 0);
+        require(
+            RewardReceiver(payable(newRewardReceiver)).withdrawalThreshold() == 32 ether,
+            "principal not protected"
+        );
+
+        vm.deal(newRewardReceiver, 33 ether);
+        uint256 providerBalanceBefore = address(provider).balance;
+        uint256 clientBalanceBefore = address(client).balance;
+        uint256 expectedCommission = (1 ether * commission) / BASIS_PTS;
+
+        vm.prank(owner);
+        RewardReceiver(payable(newRewardReceiver)).withdraw();
+        vm.prank(provider);
+        RewardReceiver(payable(newRewardReceiver)).claimProvider();
+        vm.prank(client);
+        RewardReceiver(payable(newRewardReceiver)).claimClient();
+
+        require(address(provider).balance == providerBalanceBefore + expectedCommission, "principal was commissioned");
+        require(address(client).balance == clientBalanceBefore + 33 ether - expectedCommission, "client payout incorrect");
+    }
+
+    function testFundValidatorsProtectsActualDepositValue() public {
+        (StakePadUtils.BeaconDepositParams[] memory depositDataArray,) = _getRandomDepositParams(1);
+
+        address client = account1;
+        address provider = account2;
+        uint96 commission = 1000;
+        vm.prank(owner);
+        vm.recordLogs();
+        stakePad.deployNewRewardReceiver(client, provider, commission);
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        (address newRewardReceiver,,,) =
+            abi.decode(entries[entries.length - 1].data, (address, address, address, uint96));
+
+        depositDataArray[0].depositValue = 64 ether;
+        depositDataArray[0].withdrawal_credentials = _withdrawalCredentialsFromAddress(newRewardReceiver);
+
+        vm.prank(account1);
+        stakePad.fundValidators{value: 64 ether}(depositDataArray);
+        require(
+            RewardReceiver(payable(newRewardReceiver)).withdrawalThreshold() == 64 ether,
+            "actual deposit value not protected"
+        );
+
+        vm.deal(newRewardReceiver, 65 ether);
+        uint256 providerBalanceBefore = address(provider).balance;
+        uint256 expectedCommission = (1 ether * commission) / BASIS_PTS;
+
+        vm.prank(owner);
+        RewardReceiver(payable(newRewardReceiver)).withdraw();
+        vm.prank(provider);
+        RewardReceiver(payable(newRewardReceiver)).claimProvider();
+
+        require(address(provider).balance == providerBalanceBefore + expectedCommission, "extra principal was commissioned");
     }
 
     function testOthers() public {
