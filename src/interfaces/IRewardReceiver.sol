@@ -36,8 +36,6 @@ interface IRewardReceiver {
 
     function transferOwnership(address) external;
 
-    function addValidator(bytes memory) external;
-
     function addValidator(bytes memory, uint256) external;
 
     function getValidators() external returns (bytes[] memory);

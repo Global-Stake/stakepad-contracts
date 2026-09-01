@@ -18,10 +18,6 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
 
     uint96 public pendingCommission;
     uint256 public pendingWithdrawalThreshold;
-    uint256 public claimableClient;
-    uint256 public claimableProvider;
-    uint256 public totalClaimedClient;
-    uint256 public totalClaimedProvider;
     bytes[] public validators;
 
     address internal _client;
@@ -29,8 +25,13 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
     address internal _stakePad; // managed by stakepad NO MALICIOUS PROVIDER
     uint96 internal _commission;
     uint256 internal _withdrawalThreshold;
+    uint256 public claimableClient;
+    uint256 public claimableProvider;
+    uint256 public totalClaimedClient;
+    uint256 public totalClaimedProvider;
     uint256 internal _feeAccountedRewards;
     uint256[] internal _validatorPrincipals;
+    bool internal _hasPendingWithdrawalThreshold;
 
     modifier onlyOwnerClientOrProvider() {
         require(
@@ -47,8 +48,10 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
         _;
     }
 
-    modifier onlyClient() {
-        require(client() == _msgSender(), "RewardReceiver: caller is not the client");
+    modifier onlyOwnerOrClient() {
+        require(
+            owner() == _msgSender() || client() == _msgSender(), "RewardReceiver: caller is not the owner or client"
+        );
         _;
     }
 
@@ -61,7 +64,7 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
     }
 
     modifier notPendingState() {
-        require(pendingCommission == 0 && pendingWithdrawalThreshold == 0, "RewardReceiver: pending state");
+        require(pendingCommission == 0 && !_hasPendingWithdrawalThreshold, "RewardReceiver: pending state");
         _;
     }
 
@@ -116,7 +119,7 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
         claimClient(payable(_client));
     }
 
-    function claimClient(address payable recipient) public onlyClient nonReentrant {
+    function claimClient(address payable recipient) public onlyOwnerOrClient nonReentrant {
         require(recipient != address(0), "RewardReceiver: recipient is the zero address");
 
         uint256 amount = claimableClient;
@@ -135,8 +138,7 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
         claimProvider(payable(_provider));
     }
 
-    function claimProvider(address payable recipient) public nonReentrant {
-        require(provider() == _msgSender(), "RewardReceiver: caller is not the provider");
+    function claimProvider(address payable recipient) public onlyOwnerOrProvider nonReentrant {
         _claimProvider(recipient);
     }
 
@@ -147,12 +149,12 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
     }
 
     function proposeNewWithdrawalThreshold(uint256 newWithdrawalThreshold) external onlyOwnerOrProvider {
-        _checkValidWithdrawalThreshold(newWithdrawalThreshold);
         pendingWithdrawalThreshold = newWithdrawalThreshold;
+        _hasPendingWithdrawalThreshold = true;
         emit WithdrawalThresholdProposed(_msgSender(), newWithdrawalThreshold);
     }
 
-    function acceptNewCommission() external onlyClient {
+    function acceptNewCommission() external onlyOwnerOrClient {
         _checkValidPercentange(pendingCommission);
         uint96 previousCommission = _commission;
         _commission = pendingCommission;
@@ -160,11 +162,12 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
         emit CommissionAccepted(_msgSender(), previousCommission, _commission);
     }
 
-    function acceptNewWithdrawalThreshold() external onlyClient {
-        _checkValidWithdrawalThreshold(pendingWithdrawalThreshold);
+    function acceptNewWithdrawalThreshold() external onlyOwnerOrClient {
+        require(_hasPendingWithdrawalThreshold, "RewardReceiver: no pending withdrawal threshold");
         uint256 previousWithdrawalThreshold = _withdrawalThreshold;
         _withdrawalThreshold = pendingWithdrawalThreshold;
         pendingWithdrawalThreshold = 0;
+        _hasPendingWithdrawalThreshold = false;
         emit WithdrawalThresholdAccepted(_msgSender(), previousWithdrawalThreshold, _withdrawalThreshold);
     }
 
@@ -176,9 +179,10 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
     }
 
     function cancelNewWithdrawalThreshold() external onlyOwnerOrProvider {
-        _checkValidWithdrawalThreshold(pendingWithdrawalThreshold);
+        require(_hasPendingWithdrawalThreshold, "RewardReceiver: no pending withdrawal threshold");
         uint256 cancelledWithdrawalThreshold = pendingWithdrawalThreshold;
         pendingWithdrawalThreshold = 0;
+        _hasPendingWithdrawalThreshold = false;
         emit WithdrawalThresholdCancelled(_msgSender(), cancelledWithdrawalThreshold);
     }
 
@@ -188,10 +192,6 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
 
     function withdrawalThreshold() external view returns (uint256) {
         return _withdrawalThreshold;
-    }
-
-    function addValidator(bytes memory pubkey) external onlyStakePadOrProviderOrAdmin {
-        _addValidator(pubkey, 0);
     }
 
     function addValidator(bytes memory pubkey, uint256 protectedPrincipal) external onlyStakePadOrProviderOrAdmin {
@@ -221,13 +221,19 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
         uint256 len = validators.length;
         require(index < len, "RewardReceiver : invalid index");
         bytes memory removedValidator = validators[index];
-        uint256 removedPrincipal = _validatorPrincipals[index];
+        uint256 removedPrincipal = 0;
+        uint256 principalLen = _validatorPrincipals.length;
+        if (index < principalLen) {
+            removedPrincipal = _validatorPrincipals[index];
+            if (index != principalLen - 1) {
+                _validatorPrincipals[index] = _validatorPrincipals[principalLen - 1];
+            }
+            _validatorPrincipals.pop();
+        }
         if (index != len - 1) {
             validators[index] = validators[len - 1];
-            _validatorPrincipals[index] = _validatorPrincipals[len - 1];
         }
         validators.pop();
-        _validatorPrincipals.pop();
         _decreaseProtectedPrincipal(removedPrincipal);
         emit ValidatorRemoved(index, removedValidator, removedPrincipal, _withdrawalThreshold);
     }
@@ -241,8 +247,10 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
 
     function percentageWithdraw(uint96 percentage) external onlyOwner {
         _checkValidPercentange(percentage);
-        uint256 balance = _unallocatedBalance();
-        uint256 amounToWithdraw = (balance * percentage) / BASIS_PTS;
+        uint256 unaccountedRewards = _unaccountedRewards();
+        uint256 availableBalance = _unallocatedBalance();
+        uint256 withdrawable = unaccountedRewards < availableBalance ? unaccountedRewards : availableBalance;
+        uint256 amounToWithdraw = (withdrawable * percentage) / BASIS_PTS;
         require(amounToWithdraw > 0, "RewardReceiver: amount too low");
         totalClaimedProvider += amounToWithdraw;
         _feeAccountedRewards += amounToWithdraw;
@@ -324,6 +332,12 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
         return address(this).balance + totalClaimedClient + totalClaimedProvider;
     }
 
+    function _unaccountedRewards() internal view returns (uint256) {
+        uint256 totalReceived = _lifetimeReceived();
+        uint256 totalRewards = totalReceived > _withdrawalThreshold ? totalReceived - _withdrawalThreshold : 0;
+        return totalRewards > _feeAccountedRewards ? totalRewards - _feeAccountedRewards : 0;
+    }
+
     function _decreaseProtectedPrincipal(uint256 protectedPrincipal) internal {
         if (protectedPrincipal == 0) {
             return;
@@ -344,7 +358,4 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
         require(newPercentage > 0 && newPercentage <= BASIS_PTS, "RewardReceiver: invalid percentage");
     }
 
-    function _checkValidWithdrawalThreshold(uint256 newWithdrawalThreshold) internal pure {
-        require(newWithdrawalThreshold > 0, "RewardReceiver: invalid withdrawal threshold");
-    }
 }
