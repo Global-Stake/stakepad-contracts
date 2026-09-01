@@ -251,6 +251,18 @@ contract RewardReceiverTest is TestUtils {
             address(rewardReceiver).balance == 0,
             "rewardReceiver not empty"
         );
+        require(
+            rewardReceiver.totalClaimedProvider() == 16 ether,
+            "percentage withdraw did not record provider claim"
+        );
+        require(
+            rewardReceiver.feeAccountedRewards() == 16 ether,
+            "percentage withdraw did not account rewards"
+        );
+        require(
+            rewardReceiver.lifetimeReceived() == 16 ether,
+            "percentage withdraw changed lifetime received"
+        );
     }
 
     function testWithdraw() public {
@@ -726,6 +738,17 @@ contract RewardReceiverTest is TestUtils {
             rewardReceiver.withdrawalThreshold() == 32 ether,
             "protected principal not updated"
         );
+
+        vm.prank(testStakePad);
+        rewardReceiver.removeValidator(1);
+        require(
+            rewardReceiver.withdrawalThreshold() == 0,
+            "protected principal not released on remove"
+        );
+        require(
+            rewardReceiver.getValidators().length == 1,
+            "validator not removed"
+        );
     }
 
     function testRemoveValidators() public {
@@ -783,6 +806,29 @@ contract RewardReceiverTest is TestUtils {
         require(
             keccak256(validator3) == keccak256("0x1234567"),
             "validators not removed correctly"
+        );
+    }
+
+    function testRemoveValidatorDoesNotDropAccountedPrincipal() public {
+        vm.prank(testStakePad);
+        rewardReceiver.addValidator("0xabc", 32 ether);
+
+        vm.deal(address(rewardReceiver), 32.2 ether);
+        vm.prank(owner);
+        rewardReceiver.withdraw();
+        vm.prank(provider);
+        rewardReceiver.claimProvider();
+        vm.prank(client);
+        rewardReceiver.claimClient();
+
+        uint256 thresholdAfterExit = rewardReceiver.withdrawalThreshold();
+        require(thresholdAfterExit == 32 ether, "threshold should still protect returned principal");
+
+        vm.prank(testStakePad);
+        rewardReceiver.removeValidator(0);
+        require(
+            rewardReceiver.withdrawalThreshold() == 32 ether,
+            "remove after unstake must not unprotect already-received principal"
         );
     }
 

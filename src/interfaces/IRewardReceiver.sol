@@ -26,7 +26,9 @@ interface IRewardReceiver {
     );
     event WithdrawalThresholdCancelled(address indexed canceller, uint256 withdrawalThreshold);
     event ValidatorAdded(bytes pubkey, uint256 protectedPrincipal, uint256 protectedPrincipalAfter);
-    event ValidatorRemoved(uint256 indexed index, bytes pubkey);
+    event ValidatorRemoved(
+        uint256 indexed index, bytes pubkey, uint256 protectedPrincipal, uint256 protectedPrincipalAfter
+    );
     event StakePadChanged(address indexed previousStakePad, address indexed newStakePad);
     event PercentageWithdrawn(address indexed caller, address indexed provider, uint96 percentage, uint256 amount);
 

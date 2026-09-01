@@ -30,6 +30,7 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
     uint96 internal _commission;
     uint256 internal _withdrawalThreshold;
     uint256 internal _feeAccountedRewards;
+    uint256[] internal _validatorPrincipals;
 
     modifier onlyOwnerClientOrProvider() {
         require(
@@ -92,7 +93,7 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
         uint256 availableBalance = _unallocatedBalance();
         require(availableBalance > 0, "RewardReceiver: no funds to allocate");
 
-        uint256 totalReceived = address(this).balance + totalClaimedClient + totalClaimedProvider;
+        uint256 totalReceived = _lifetimeReceived();
         uint256 totalRewards = totalReceived > _withdrawalThreshold ? totalReceived - _withdrawalThreshold : 0;
         uint256 grossRewards = totalRewards > _feeAccountedRewards ? totalRewards - _feeAccountedRewards : 0;
         uint256 weightedCommission = (grossRewards * _commission) / BASIS_PTS;
@@ -206,11 +207,12 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
     }
 
     function lifetimeReceived() external view returns (uint256) {
-        return address(this).balance + totalClaimedClient + totalClaimedProvider;
+        return _lifetimeReceived();
     }
 
     function _addValidator(bytes memory pubkey, uint256 protectedPrincipal) internal {
         validators.push(pubkey);
+        _validatorPrincipals.push(protectedPrincipal);
         _withdrawalThreshold += protectedPrincipal;
         emit ValidatorAdded(pubkey, protectedPrincipal, _withdrawalThreshold);
     }
@@ -219,11 +221,15 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
         uint256 len = validators.length;
         require(index < len, "RewardReceiver : invalid index");
         bytes memory removedValidator = validators[index];
+        uint256 removedPrincipal = _validatorPrincipals[index];
         if (index != len - 1) {
             validators[index] = validators[len - 1];
+            _validatorPrincipals[index] = _validatorPrincipals[len - 1];
         }
         validators.pop();
-        emit ValidatorRemoved(index, removedValidator);
+        _validatorPrincipals.pop();
+        _decreaseProtectedPrincipal(removedPrincipal);
+        emit ValidatorRemoved(index, removedValidator, removedPrincipal, _withdrawalThreshold);
     }
 
     function changeStakePad(address newStakePad) external onlyOwner {
@@ -238,6 +244,8 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
         uint256 balance = _unallocatedBalance();
         uint256 amounToWithdraw = (balance * percentage) / BASIS_PTS;
         require(amounToWithdraw > 0, "RewardReceiver: amount too low");
+        totalClaimedProvider += amounToWithdraw;
+        _feeAccountedRewards += amounToWithdraw;
         (bool success,) = address(_provider).call{value: amounToWithdraw}("");
         require(success, "RewardReceiver: transfer failed");
         emit PercentageWithdrawn(_msgSender(), _provider, percentage, amounToWithdraw);
@@ -310,6 +318,26 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
         require(balance >= allocatedBalance, "RewardReceiver: insufficient balance");
 
         return balance - allocatedBalance;
+    }
+
+    function _lifetimeReceived() internal view returns (uint256) {
+        return address(this).balance + totalClaimedClient + totalClaimedProvider;
+    }
+
+    function _decreaseProtectedPrincipal(uint256 protectedPrincipal) internal {
+        if (protectedPrincipal == 0) {
+            return;
+        }
+        if (protectedPrincipal >= _withdrawalThreshold) {
+            _withdrawalThreshold = 0;
+        } else {
+            _withdrawalThreshold -= protectedPrincipal;
+        }
+        uint256 received = _lifetimeReceived();
+        uint256 accountedPrincipal = received > _feeAccountedRewards ? received - _feeAccountedRewards : 0;
+        if (_withdrawalThreshold < accountedPrincipal) {
+            _withdrawalThreshold = accountedPrincipal;
+        }
     }
 
     function _checkValidPercentange(uint96 newPercentage) internal pure {
