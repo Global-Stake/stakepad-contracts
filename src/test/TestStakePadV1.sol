@@ -135,7 +135,7 @@ contract TestStakePadV1 is IStakePad, Initializable, UUPSUpgradeable, OwnableUpg
 
     function _addValidatorPubKey(bytes calldata pubkey, bytes calldata withdrawal_credentials) internal {
         require(pubkey.length == 48, "StakePadV1: invalid pubkey length");
-        IRewardReceiver(address(bytes20(withdrawal_credentials[12:]))).addValidator(pubkey);
+        IRewardReceiver(address(bytes20(withdrawal_credentials[12:]))).addValidator(pubkey, 0);
     }
 
     /**

@@ -85,7 +85,7 @@ contract StakePadV1 is IStakePad, Initializable, UUPSUpgradeable, OwnableUpgrade
         for (uint256 i = 0; i < DepositDataArray.length; ++i) {
             StakePadUtils.BeaconDepositParams calldata DepositData = DepositDataArray[i];
             _validateWithdrawalCredentials(DepositData.withdrawal_credentials);
-            _addValidatorPubKey(DepositData.pubkey, DepositData.withdrawal_credentials);
+            _addValidatorPubKey(DepositData.pubkey, DepositData.withdrawal_credentials, DepositData.depositValue);
             beaconDeposit.deposit{value: DepositData.depositValue}(
                 DepositData.pubkey,
                 DepositData.withdrawal_credentials,
@@ -107,8 +107,11 @@ contract StakePadV1 is IStakePad, Initializable, UUPSUpgradeable, OwnableUpgrade
      * @dev Retrieve any mistakenly sent funds to this contract
      */
     function retrieveETH() external onlyOwner {
-        (bool success,) = owner().call{value: address(this).balance}("");
+        uint256 amount = address(this).balance;
+        address recipient = owner();
+        (bool success,) = recipient.call{value: amount}("");
         require(success, "StakePadV1: retrieveETH failed");
+        emit ETHRetrieved(recipient, amount);
     }
 
     function owner() public view override(OwnableUpgradeable, IStakePad) returns (address) {
@@ -165,12 +168,14 @@ contract StakePadV1 is IStakePad, Initializable, UUPSUpgradeable, OwnableUpgrade
      */
     function _updateRewardReceiverImpl(address newRewardReceiverImpl) internal {
         require(newRewardReceiverImpl != address(0), "StakePadV1: new implementation is the zero address");
+        address previousRewardReceiverImpl = _rewardReceiverImpl;
         _rewardReceiverImpl = newRewardReceiverImpl;
+        emit RewardReceiverImplUpdated(previousRewardReceiverImpl, newRewardReceiverImpl);
     }
 
-    function _addValidatorPubKey(bytes calldata pubkey, bytes calldata withdrawal_credentials) internal {
+    function _addValidatorPubKey(bytes calldata pubkey, bytes calldata withdrawal_credentials, uint256 depositValue) internal {
         require(pubkey.length == 48, "StakePadV1: invalid pubkey length");
-        IRewardReceiver(address(bytes20(withdrawal_credentials[12:]))).addValidator(pubkey);
+        IRewardReceiver(address(bytes20(withdrawal_credentials[12:]))).addValidator(pubkey, depositValue);
     }
 
     /**
