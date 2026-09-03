@@ -7,6 +7,8 @@ interface IStakePad {
     event NewRewardReceiver(
         uint256 indexed index, address rewardReceiver, address client, address provider, uint96 commission
     );
+    event RewardReceiverImplUpdated(address indexed previousImplementation, address indexed newImplementation);
+    event ETHRetrieved(address indexed recipient, uint256 amount);
 
     function fundValidators(StakePadUtils.BeaconDepositParams[] memory) external payable;
 

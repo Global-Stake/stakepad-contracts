@@ -162,15 +162,16 @@ contract RewardReceiverTest is TestUtils {
             TEST_WITHDRAWAL_THRESHOLD * 2
         );
 
-        // fails to propose a newWithdrawalThreshold if this is 0
+        // accepts a pending zero threshold
         vm.prank(owner);
-        vm.expectRevert("RewardReceiver: invalid withdrawal threshold");
-        rewardReceiver.proposeNewWithdrawalThreshold(0);
-
-        // faiils to accept a newWithdrawalThreshold when the newWithdrawalThreshold is 0
-        vm.prank(client);
-        vm.expectRevert("RewardReceiver: invalid withdrawal threshold");
+        vm.expectRevert("RewardReceiver: no pending withdrawal threshold");
         rewardReceiver.acceptNewWithdrawalThreshold();
+
+        vm.prank(owner);
+        rewardReceiver.proposeNewWithdrawalThreshold(0);
+        vm.prank(client);
+        rewardReceiver.acceptNewWithdrawalThreshold();
+        require(rewardReceiver.withdrawalThreshold() == 0, "zero threshold not accepted");
 
         // accepts a new incoming newWithdrawalThreshold
         uint256 ss = vm.snapshot();
@@ -213,8 +214,10 @@ contract RewardReceiverTest is TestUtils {
             testStakePad
         );
         vm.prank(owner);
-        vm.expectRevert("RewardReceiver: transfer failed");
         newRewardReceiver.withdraw();
+        vm.prank(address(sampleAttackContract));
+        vm.expectRevert("RewardReceiver: transfer failed");
+        newRewardReceiver.claimClient();
     }
 
     function testWithdrawPercentage() public {
@@ -249,6 +252,31 @@ contract RewardReceiverTest is TestUtils {
             address(rewardReceiver).balance == 0,
             "rewardReceiver not empty"
         );
+        require(
+            rewardReceiver.totalClaimedProvider() == 16 ether,
+            "percentage withdraw did not record provider claim"
+        );
+        require(
+            rewardReceiver.feeAccountedRewards() == 16 ether,
+            "percentage withdraw did not account rewards"
+        );
+        require(
+            rewardReceiver.lifetimeReceived() == 16 ether,
+            "percentage withdraw changed lifetime received"
+        );
+    }
+
+    function testPercentageWithdrawCannotTakePrincipal() public {
+        vm.prank(testStakePad);
+        rewardReceiver.addValidator("0xabc", 32 ether);
+        vm.deal(address(rewardReceiver), 32.2 ether);
+
+        vm.prank(owner);
+        rewardReceiver.percentageWithdraw(10000);
+
+        require(address(rewardReceiver).balance == 32 ether, "percentage withdraw took principal");
+        require(rewardReceiver.totalClaimedProvider() == 0.2 ether, "unaccounted rewards not sent to provider");
+        require(rewardReceiver.feeAccountedRewards() == 0.2 ether, "unaccounted rewards not fee-accounted");
     }
 
     function testWithdraw() public {
@@ -261,10 +289,10 @@ contract RewardReceiverTest is TestUtils {
 
         // fails to withdraw when balance is too low
         vm.prank(owner);
-        vm.expectRevert("RewardReceiver: commission too low");
+        vm.expectRevert("RewardReceiver: no funds to allocate");
         rewardReceiver.withdraw();
 
-        // fails if the transfer function fails
+        // allocation succeeds even when the client cannot receive ETH
         RewardReceiver testRewardReceiver = new RewardReceiver();
         ContractWithdrawerNoReceive sampleContractWithdrawer = new ContractWithdrawerNoReceive();
         vm.prank(owner);
@@ -276,8 +304,15 @@ contract RewardReceiverTest is TestUtils {
         );
         vm.deal(address(testRewardReceiver), TEST_WITHDRAWAL_THRESHOLD * 2);
         vm.prank(owner);
-        vm.expectRevert("RewardReceiver: transfer failed");
         testRewardReceiver.withdraw();
+        require(testRewardReceiver.claimableClient() > 0, "client claimable not allocated");
+        require(testRewardReceiver.claimableProvider() > 0, "provider claimable not allocated");
+
+        vm.prank(provider);
+        testRewardReceiver.claimProvider();
+        vm.prank(address(sampleContractWithdrawer));
+        vm.expectRevert("RewardReceiver: transfer failed");
+        testRewardReceiver.claimClient();
 
         // succeeds to withdraw if the transfer function succeeds
         testRewardReceiver = new RewardReceiver();
@@ -292,6 +327,10 @@ contract RewardReceiverTest is TestUtils {
         vm.deal(address(testRewardReceiver), TEST_WITHDRAWAL_THRESHOLD * 2);
         vm.prank(owner);
         testRewardReceiver.withdraw();
+        vm.prank(provider);
+        testRewardReceiver.claimProvider();
+        vm.prank(address(sampleContractWithdrawerReceive));
+        testRewardReceiver.claimClient();
 
         // CHECK AMOUNTS transferred
         vm.deal(address(rewardReceiver), 16 ether - 1);
@@ -304,6 +343,10 @@ contract RewardReceiverTest is TestUtils {
         // ----PERFORM CALL---
         vm.prank(owner);
         rewardReceiver.withdraw();
+        vm.prank(provider);
+        rewardReceiver.claimProvider();
+        vm.prank(client);
+        rewardReceiver.claimClient();
 
         // ----DATA AFTER----
         uint256 rewardReceiverBalanceAfter = address(rewardReceiver).balance;
@@ -336,32 +379,45 @@ contract RewardReceiverTest is TestUtils {
         providerBalanceBefore = address(provider).balance;
         clientBalanceBefore = address(client).balance;
 
-        // ----PERFORM CALL--- FAILS
+        // ----PERFORM CALL--- succeeds and assigns dust to the client
         vm.prank(owner);
-        vm.expectRevert("RewardReceiver: commission too low");
         rewardReceiver.withdraw();
+        require(rewardReceiver.claimableClient() == 1, "dust not allocated to client");
+        require(rewardReceiver.claimableProvider() == 0, "dust allocated to provider");
+        vm.prank(client);
+        rewardReceiver.claimClient();
+        require(address(rewardReceiver).balance == 0, "rewardReceiver not empty");
+        require(clientBalanceBefore + 1 == address(client).balance, "dust not claimed");
+
+        RewardReceiver thresholdReceiver = new RewardReceiver();
+        vm.prank(owner);
+        thresholdReceiver.initialize(client, provider, commission, testStakePad);
 
         // CHECK AMOUNTS transferred
-        vm.deal(address(rewardReceiver), 20 ether);
+        vm.deal(address(thresholdReceiver), 20 ether);
 
         // ----DATA BEFORE----
-        rewardReceiverBalanceBefore = address(rewardReceiver).balance;
+        rewardReceiverBalanceBefore = address(thresholdReceiver).balance;
         providerBalanceBefore = address(provider).balance;
         clientBalanceBefore = address(client).balance;
 
         // ----UPDATE WITHDRAWAL THRESHOLD----
 
         vm.prank(owner);
-        rewardReceiver.proposeNewWithdrawalThreshold(TEST_WITHDRAWAL_THRESHOLD);
+        thresholdReceiver.proposeNewWithdrawalThreshold(TEST_WITHDRAWAL_THRESHOLD);
         vm.prank(client);
-        rewardReceiver.acceptNewWithdrawalThreshold();
+        thresholdReceiver.acceptNewWithdrawalThreshold();
 
-        // ----PERFORM CALL--- FAILS
+        // ----PERFORM CALL---
         vm.prank(owner);
-        rewardReceiver.withdraw();
+        thresholdReceiver.withdraw();
+        vm.prank(provider);
+        thresholdReceiver.claimProvider();
+        vm.prank(client);
+        thresholdReceiver.claimClient();
 
         // ----DATA AFTER----
-        rewardReceiverBalanceAfter = address(rewardReceiver).balance;
+        rewardReceiverBalanceAfter = address(thresholdReceiver).balance;
         providerBalanceAfter = address(provider).balance;
         clientBalanceAfter = address(client).balance;
 
@@ -369,7 +425,7 @@ contract RewardReceiverTest is TestUtils {
         require(
             providerBalanceBefore +
                 ((rewardReceiverBalanceBefore - TEST_WITHDRAWAL_THRESHOLD) *
-                    rewardReceiver.commission()) /
+                    thresholdReceiver.commission()) /
                 BASIS_PTS ==
                 providerBalanceAfter,
             "withdrawn amount not correct"
@@ -379,11 +435,26 @@ contract RewardReceiverTest is TestUtils {
             clientBalanceBefore +
                 (rewardReceiverBalanceBefore) -
                 ((rewardReceiverBalanceBefore - TEST_WITHDRAWAL_THRESHOLD) *
-                    rewardReceiver.commission()) /
+                    thresholdReceiver.commission()) /
                 BASIS_PTS ==
                 clientBalanceAfter,
             "withdrawn amount not correct"
         );
+    }
+
+    function testReceiveAndWithdrawEmitStructuredEvents() public {
+        vm.recordLogs();
+        vm.prank(owner);
+        (bool success,) = address(rewardReceiver).call{value: 1 ether}("");
+        require(success, "funding failed");
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        require(entries.length == 1, "receive event not emitted");
+
+        vm.recordLogs();
+        vm.prank(owner);
+        rewardReceiver.withdraw();
+        entries = vm.getRecordedLogs();
+        require(entries.length == 1, "allocation event not emitted");
     }
 
     function testCannotWithdrawWhenPending() public {
@@ -426,7 +497,7 @@ contract RewardReceiverTest is TestUtils {
     }
 
     function testFuzzWithdrawal(uint256 balanceOfContract) public {
-        vm.assume(balanceOfContract < MAX_UINT / rewardReceiver.commission());
+        vm.assume(balanceOfContract < 1_000_000 ether);
         // CHECK AMOUNTS transferred
         vm.deal(address(rewardReceiver), balanceOfContract);
 
@@ -450,19 +521,21 @@ contract RewardReceiverTest is TestUtils {
                 ((balanceOfContract - TEST_WITHDRAWAL_THRESHOLD) *
                     rewardReceiver.commission()) /
                 BASIS_PTS;
-        } else {
-            commission =
-                (balanceOfContract * rewardReceiver.commission()) /
-                BASIS_PTS;
         }
 
         // ----PERFORM CALL WITH CONDITIONAL REVERT---
         vm.prank(owner);
-        if (commission == 0) {
-            vm.expectRevert("RewardReceiver: commission too low");
+        if (balanceOfContract == 0) {
+            vm.expectRevert("RewardReceiver: no funds to allocate");
             rewardReceiver.withdraw();
         } else {
             rewardReceiver.withdraw();
+            if (commission > 0) {
+                vm.prank(provider);
+                rewardReceiver.claimProvider();
+            }
+            vm.prank(client);
+            rewardReceiver.claimClient();
             // ----DATA AFTER----
             uint256 rewardReceiverBalanceAfter = address(rewardReceiver)
                 .balance;
@@ -486,15 +559,218 @@ contract RewardReceiverTest is TestUtils {
         }
     }
 
+    function testUnauthorizedCallerCannotClaimClientOrProvider() public {
+        vm.deal(address(rewardReceiver), 10 ether);
+        vm.prank(owner);
+        rewardReceiver.withdraw();
+
+        vm.prank(account1);
+        vm.expectRevert("RewardReceiver: caller is not the owner or client");
+        rewardReceiver.claimClient();
+
+        vm.prank(account1);
+        vm.expectRevert("RewardReceiver: caller is not the owner or client");
+        rewardReceiver.claimClient(payable(account1));
+
+        vm.prank(account1);
+        vm.expectRevert("RewardReceiver: caller is not the owner or provider");
+        rewardReceiver.claimProvider();
+
+        vm.prank(account1);
+        vm.expectRevert("RewardReceiver: caller is not the owner or provider");
+        rewardReceiver.claimProvider(payable(account1));
+    }
+
+    function testOwnerCanClaimAndAcceptOnBehalfOfParties() public {
+        vm.deal(address(rewardReceiver), 10 ether);
+        vm.prank(owner);
+        rewardReceiver.withdraw();
+
+        uint256 expectedProviderAmount = (10 ether * rewardReceiver.commission()) / BASIS_PTS;
+        uint256 expectedClientAmount = 10 ether - expectedProviderAmount;
+        uint256 clientBalanceBefore = address(client).balance;
+        uint256 providerBalanceBefore = address(provider).balance;
+
+        vm.prank(owner);
+        rewardReceiver.claimClient();
+        vm.prank(owner);
+        rewardReceiver.claimProvider();
+
+        require(address(client).balance == clientBalanceBefore + expectedClientAmount, "owner client claim incorrect");
+        require(
+            address(provider).balance == providerBalanceBefore + expectedProviderAmount, "owner provider claim incorrect"
+        );
+
+        vm.prank(owner);
+        rewardReceiver.proposeNewCommission(commission * 2);
+        vm.prank(owner);
+        rewardReceiver.acceptNewCommission();
+        require(rewardReceiver.commission() == commission * 2, "owner could not accept commission");
+
+        vm.prank(owner);
+        rewardReceiver.proposeNewWithdrawalThreshold(TEST_WITHDRAWAL_THRESHOLD);
+        vm.prank(owner);
+        rewardReceiver.acceptNewWithdrawalThreshold();
+        require(
+            rewardReceiver.withdrawalThreshold() == TEST_WITHDRAWAL_THRESHOLD,
+            "owner could not accept withdrawal threshold"
+        );
+    }
+
+    function testClientAndProviderCanClaimToAlternateRecipients() public {
+        uint256 balanceOfContract = 10 ether;
+        uint256 expectedProviderAmount = (balanceOfContract * rewardReceiver.commission()) / BASIS_PTS;
+        uint256 expectedClientAmount = balanceOfContract - expectedProviderAmount;
+
+        vm.deal(address(rewardReceiver), balanceOfContract);
+        vm.prank(owner);
+        rewardReceiver.withdraw();
+
+        uint256 clientBalanceBefore = address(client).balance;
+        uint256 providerBalanceBefore = address(provider).balance;
+        uint256 clientRecipientBalanceBefore = address(account1).balance;
+        uint256 providerRecipientBalanceBefore = address(account2).balance;
+
+        vm.prank(client);
+        rewardReceiver.claimClient(payable(account1));
+
+        vm.prank(provider);
+        rewardReceiver.claimProvider(payable(account2));
+
+        require(address(account1).balance == clientRecipientBalanceBefore + expectedClientAmount, "client recipient incorrect");
+        require(address(account2).balance == providerRecipientBalanceBefore + expectedProviderAmount, "provider recipient incorrect");
+        require(address(client).balance == clientBalanceBefore, "client should not receive redirected claim");
+        require(address(provider).balance == providerBalanceBefore, "provider should not receive redirected claim");
+        require(rewardReceiver.claimableClient() == 0, "client claimable not cleared");
+        require(rewardReceiver.claimableProvider() == 0, "provider claimable not cleared");
+        require(rewardReceiver.totalClaimedClient() == expectedClientAmount, "total claimed client incorrect");
+        require(rewardReceiver.totalClaimedProvider() == expectedProviderAmount, "total claimed provider incorrect");
+    }
+
+    function testClaimFailureDoesNotClearClaimableBalances() public {
+        ContractWithdrawerNoReceive failingRecipient = new ContractWithdrawerNoReceive();
+        uint256 balanceOfContract = 10 ether;
+
+        vm.deal(address(rewardReceiver), balanceOfContract);
+        vm.prank(owner);
+        rewardReceiver.withdraw();
+
+        uint256 claimableClientBefore = rewardReceiver.claimableClient();
+        uint256 claimableProviderBefore = rewardReceiver.claimableProvider();
+
+        vm.prank(client);
+        vm.expectRevert("RewardReceiver: transfer failed");
+        rewardReceiver.claimClient(payable(address(failingRecipient)));
+
+        require(rewardReceiver.claimableClient() == claimableClientBefore, "failed client claim cleared balance");
+        require(rewardReceiver.totalClaimedClient() == 0, "failed client claim updated total");
+
+        vm.prank(provider);
+        vm.expectRevert("RewardReceiver: transfer failed");
+        rewardReceiver.claimProvider(payable(address(failingRecipient)));
+
+        require(rewardReceiver.claimableProvider() == claimableProviderBefore, "failed provider claim cleared balance");
+        require(rewardReceiver.totalClaimedProvider() == 0, "failed provider claim updated total");
+    }
+
+    function testMultipleWithdrawsBeforeClaimsDoNotDoubleCountCommission() public {
+        uint256 firstBalance = 10 ether;
+        uint256 secondBalance = 5 ether;
+        uint256 firstCommission = (firstBalance * rewardReceiver.commission()) / BASIS_PTS;
+        uint256 secondCommission = (secondBalance * rewardReceiver.commission()) / BASIS_PTS;
+
+        vm.deal(address(rewardReceiver), firstBalance);
+        vm.prank(owner);
+        rewardReceiver.withdraw();
+
+        vm.deal(address(rewardReceiver), firstBalance + secondBalance);
+        vm.prank(owner);
+        rewardReceiver.withdraw();
+
+        require(
+            rewardReceiver.claimableProvider() == firstCommission + secondCommission,
+            "provider commission double-counted"
+        );
+        require(
+            rewardReceiver.claimableClient() == firstBalance + secondBalance - firstCommission - secondCommission,
+            "client claimable incorrect"
+        );
+        require(rewardReceiver.feeAccountedRewards() == firstBalance + secondBalance, "fee accounted rewards incorrect");
+
+        vm.prank(provider);
+        rewardReceiver.claimProvider();
+        vm.prank(client);
+        rewardReceiver.claimClient();
+
+        require(address(rewardReceiver).balance == 0, "rewardReceiver not empty");
+    }
+
+    function testMultipleReceiveWithdrawClaimCyclesKeepAccountingCorrect() public {
+        uint256 withdrawalThreshold = 16 ether;
+        uint256 firstReceived = 17 ether;
+        uint256 secondReceived = 2 ether;
+        uint256 firstCommission = ((firstReceived - withdrawalThreshold) * rewardReceiver.commission()) / BASIS_PTS;
+        uint256 secondCommission = (secondReceived * rewardReceiver.commission()) / BASIS_PTS;
+
+        vm.prank(owner);
+        rewardReceiver.proposeNewWithdrawalThreshold(withdrawalThreshold);
+        vm.prank(client);
+        rewardReceiver.acceptNewWithdrawalThreshold();
+
+        uint256 providerBalanceBefore = address(provider).balance;
+        uint256 clientBalanceBefore = address(client).balance;
+
+        vm.prank(owner);
+        (bool success,) = address(rewardReceiver).call{value: firstReceived}("");
+        require(success, "first receive failed");
+
+        vm.prank(owner);
+        rewardReceiver.withdraw();
+        vm.prank(provider);
+        rewardReceiver.claimProvider();
+        vm.prank(client);
+        rewardReceiver.claimClient();
+
+        require(address(provider).balance == providerBalanceBefore + firstCommission, "first provider claim incorrect");
+        require(address(client).balance == clientBalanceBefore + firstReceived - firstCommission, "first client claim incorrect");
+        require(rewardReceiver.feeAccountedRewards() == firstReceived - withdrawalThreshold, "first rewards incorrect");
+
+        vm.prank(owner);
+        (success,) = address(rewardReceiver).call{value: secondReceived}("");
+        require(success, "second receive failed");
+
+        vm.prank(owner);
+        rewardReceiver.withdraw();
+        vm.prank(provider);
+        rewardReceiver.claimProvider();
+        vm.prank(client);
+        rewardReceiver.claimClient();
+
+        require(
+            address(provider).balance == providerBalanceBefore + firstCommission + secondCommission,
+            "second provider claim incorrect"
+        );
+        require(
+            address(client).balance == clientBalanceBefore + firstReceived + secondReceived - firstCommission - secondCommission,
+            "second client claim incorrect"
+        );
+        require(rewardReceiver.totalClaimedProvider() == firstCommission + secondCommission, "provider total incorrect");
+        require(
+            rewardReceiver.totalClaimedClient() == firstReceived + secondReceived - firstCommission - secondCommission,
+            "client total incorrect"
+        );
+        require(address(rewardReceiver).balance == 0, "rewardReceiver not empty");
+    }
+
     function testAddValidators() public {
         vm.prank(account3);
         vm.expectRevert(
             "RewardReceiver: caller is not stakePad or provider or owner"
         );
-        rewardReceiver.addValidator("0x1234");
+        rewardReceiver.addValidator("0x1234", 0);
 
         vm.prank(testStakePad);
-        rewardReceiver.addValidator("0x12345");
+        rewardReceiver.addValidator("0x12345", 0);
 
         require(
             rewardReceiver.getValidators().length == 1,
@@ -505,17 +781,35 @@ contract RewardReceiverTest is TestUtils {
                 keccak256("0x12345"),
             "validators not added correctly"
         );
+
+        vm.prank(testStakePad);
+        rewardReceiver.addValidator("0x123456", 32 ether);
+        require(
+            rewardReceiver.withdrawalThreshold() == 32 ether,
+            "protected principal not updated"
+        );
+
+        vm.prank(testStakePad);
+        rewardReceiver.removeValidator(1);
+        require(
+            rewardReceiver.withdrawalThreshold() == 32 ether,
+            "removeValidator must not lower the threshold"
+        );
+        require(
+            rewardReceiver.getValidators().length == 1,
+            "validator not removed"
+        );
     }
 
     function testRemoveValidators() public {
         vm.prank(testStakePad);
-        rewardReceiver.addValidator("0x12345");
+        rewardReceiver.addValidator("0x12345", 0);
 
         vm.prank(testStakePad);
-        rewardReceiver.addValidator("0x123456");
+        rewardReceiver.addValidator("0x123456", 0);
 
         vm.prank(testStakePad);
-        rewardReceiver.addValidator("0x1234567");
+        rewardReceiver.addValidator("0x1234567", 0);
         require(
             rewardReceiver.getValidators().length == 3,
             "validators not added correctly"
@@ -565,6 +859,124 @@ contract RewardReceiverTest is TestUtils {
         );
     }
 
+    function testRemoveValidatorDoesNotDropAccountedPrincipal() public {
+        vm.prank(testStakePad);
+        rewardReceiver.addValidator("0xabc", 32 ether);
+
+        vm.deal(address(rewardReceiver), 32.2 ether);
+        vm.prank(owner);
+        rewardReceiver.withdraw();
+        vm.prank(provider);
+        rewardReceiver.claimProvider();
+        vm.prank(client);
+        rewardReceiver.claimClient();
+
+        uint256 thresholdAfterExit = rewardReceiver.withdrawalThreshold();
+        require(thresholdAfterExit == 32 ether, "threshold should still protect returned principal");
+
+        vm.prank(testStakePad);
+        rewardReceiver.removeValidator(0);
+        require(
+            rewardReceiver.withdrawalThreshold() == 32 ether,
+            "remove after unstake must not unprotect already-received principal"
+        );
+    }
+
+    function _receiveAndAllocate(uint256 amount) internal {
+        vm.deal(
+            address(rewardReceiver),
+            address(rewardReceiver).balance + amount
+        );
+        vm.prank(owner);
+        rewardReceiver.withdraw();
+        vm.prank(client);
+        rewardReceiver.claimClient();
+        if (rewardReceiver.claimableProvider() > 0) {
+            vm.prank(provider);
+            rewardReceiver.claimProvider();
+        }
+    }
+
+    function testRemoveExitedValidatorDoesNotUnprotectActivePrincipal() public {
+        vm.startPrank(testStakePad);
+        rewardReceiver.addValidator("A", 32 ether);
+        rewardReceiver.addValidator("B", 32 ether);
+        vm.stopPrank();
+
+        _receiveAndAllocate(32.4 ether);
+        vm.prank(testStakePad);
+        rewardReceiver.removeValidator(0);
+        require(
+            rewardReceiver.withdrawalThreshold() == 64 ether,
+            "remove must keep remaining beacon principal protected"
+        );
+
+        _receiveAndAllocate(32.3 ether);
+        require(
+            rewardReceiver.totalClaimedProvider() == 0.07 ether,
+            "commission must be 10% of 0.7 ETH rewards"
+        );
+        require(
+            rewardReceiver.totalClaimedClient() == 64.63 ether,
+            "client must receive remaining principal plus 90% of rewards"
+        );
+    }
+
+    function testAddValidatorDoesNotResetFeeAccountedRewards() public {
+        vm.prank(testStakePad);
+        rewardReceiver.addValidator("A", 32 ether);
+        _receiveAndAllocate(32.4 ether);
+        require(
+            rewardReceiver.feeAccountedRewards() == 0.4 ether,
+            "first cycle should account 0.4 ETH rewards"
+        );
+
+        vm.prank(testStakePad);
+        rewardReceiver.addValidator("B", 32 ether);
+        _receiveAndAllocate(0.1 ether);
+        require(
+            rewardReceiver.feeAccountedRewards() == 0.4 ether,
+            "feeAccountedRewards must be monotone"
+        );
+
+        _receiveAndAllocate(32.2 ether);
+        require(
+            rewardReceiver.totalClaimedProvider() == 0.07 ether,
+            "must not re-commission already accounted rewards"
+        );
+        require(
+            rewardReceiver.totalClaimedClient() == 64.63 ether,
+            "client total incorrect"
+        );
+    }
+
+    function testLoweredThresholdAfterPrincipalPaidDoesNotBrickWithdraw() public {
+        vm.prank(testStakePad);
+        rewardReceiver.addValidator("A", 32 ether);
+        _receiveAndAllocate(32.4 ether);
+
+        vm.startPrank(owner);
+        rewardReceiver.proposeNewWithdrawalThreshold(16 ether);
+        rewardReceiver.acceptNewWithdrawalThreshold();
+        vm.stopPrank();
+
+        vm.deal(
+            address(rewardReceiver),
+            address(rewardReceiver).balance + 0.1 ether
+        );
+        vm.prank(owner);
+        rewardReceiver.withdraw();
+
+        require(
+            rewardReceiver.claimableProvider() == 0.01 ether,
+            "commission only on newly available balance"
+        );
+        require(
+            rewardReceiver.claimableClient() == 0.09 ether,
+            "client keeps the rest of the new inflow"
+        );
+    }
+
     function testChangeStakePad() public {
         vm.prank(client);
         vm.expectRevert(abi.encodeWithSelector(0x118cdaa7, client));
@@ -588,37 +1000,31 @@ contract RewardReceiverTest is TestUtils {
             vm.expectRevert("RewardReceiver: invalid percentage");
             rewardReceiver.proposeNewCommission(newInputCommission);
         } else {
-            if (newInputThreshold == 0) {
-                vm.prank(owner);
-                vm.expectRevert("RewardReceiver: invalid withdrawal threshold");
-                rewardReceiver.proposeNewWithdrawalThreshold(newInputThreshold);
-            } else {
-                vm.prank(owner);
-                rewardReceiver.proposeNewCommission(newInputCommission);
-                vm.prank(owner);
-                rewardReceiver.proposeNewWithdrawalThreshold(newInputThreshold);
-                vm.prank(client);
-                rewardReceiver.acceptNewWithdrawalThreshold();
-                vm.prank(client);
-                rewardReceiver.acceptNewCommission();
+            vm.prank(owner);
+            rewardReceiver.proposeNewCommission(newInputCommission);
+            vm.prank(owner);
+            rewardReceiver.proposeNewWithdrawalThreshold(newInputThreshold);
+            vm.prank(client);
+            rewardReceiver.acceptNewWithdrawalThreshold();
+            vm.prank(client);
+            rewardReceiver.acceptNewCommission();
 
-                require(
-                    rewardReceiver.commission() == newInputCommission,
-                    "commission not updated correctly"
-                );
-                require(
-                    rewardReceiver.withdrawalThreshold() == newInputThreshold,
-                    "withdrawalThreshold not updated correctly"
-                );
-                require(
-                    rewardReceiver.pendingCommission() == 0,
-                    "pendingCommission not updated correctly"
-                );
-                require(
-                    rewardReceiver.pendingWithdrawalThreshold() == 0,
-                    "pendingWithdrawalThreshold not updated correctly"
-                );
-            }
+            require(
+                rewardReceiver.commission() == newInputCommission,
+                "commission not updated correctly"
+            );
+            require(
+                rewardReceiver.withdrawalThreshold() == newInputThreshold,
+                "withdrawalThreshold not updated correctly"
+            );
+            require(
+                rewardReceiver.pendingCommission() == 0,
+                "pendingCommission not updated correctly"
+            );
+            require(
+                rewardReceiver.pendingWithdrawalThreshold() == 0,
+                "pendingWithdrawalThreshold not updated correctly"
+            );
         }
     }
 }
