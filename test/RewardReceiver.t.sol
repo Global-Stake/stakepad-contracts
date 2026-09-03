@@ -792,8 +792,8 @@ contract RewardReceiverTest is TestUtils {
         vm.prank(testStakePad);
         rewardReceiver.removeValidator(1);
         require(
-            rewardReceiver.withdrawalThreshold() == 0,
-            "protected principal not released on remove"
+            rewardReceiver.withdrawalThreshold() == 32 ether,
+            "removeValidator must not lower the threshold"
         );
         require(
             rewardReceiver.getValidators().length == 1,
@@ -879,6 +879,101 @@ contract RewardReceiverTest is TestUtils {
         require(
             rewardReceiver.withdrawalThreshold() == 32 ether,
             "remove after unstake must not unprotect already-received principal"
+        );
+    }
+
+    function _receiveAndAllocate(uint256 amount) internal {
+        vm.deal(
+            address(rewardReceiver),
+            address(rewardReceiver).balance + amount
+        );
+        vm.prank(owner);
+        rewardReceiver.withdraw();
+        vm.prank(client);
+        rewardReceiver.claimClient();
+        if (rewardReceiver.claimableProvider() > 0) {
+            vm.prank(provider);
+            rewardReceiver.claimProvider();
+        }
+    }
+
+    function testRemoveExitedValidatorDoesNotUnprotectActivePrincipal() public {
+        vm.startPrank(testStakePad);
+        rewardReceiver.addValidator("A", 32 ether);
+        rewardReceiver.addValidator("B", 32 ether);
+        vm.stopPrank();
+
+        _receiveAndAllocate(32.4 ether);
+        vm.prank(testStakePad);
+        rewardReceiver.removeValidator(0);
+        require(
+            rewardReceiver.withdrawalThreshold() == 64 ether,
+            "remove must keep remaining beacon principal protected"
+        );
+
+        _receiveAndAllocate(32.3 ether);
+        require(
+            rewardReceiver.totalClaimedProvider() == 0.07 ether,
+            "commission must be 10% of 0.7 ETH rewards"
+        );
+        require(
+            rewardReceiver.totalClaimedClient() == 64.63 ether,
+            "client must receive remaining principal plus 90% of rewards"
+        );
+    }
+
+    function testAddValidatorDoesNotResetFeeAccountedRewards() public {
+        vm.prank(testStakePad);
+        rewardReceiver.addValidator("A", 32 ether);
+        _receiveAndAllocate(32.4 ether);
+        require(
+            rewardReceiver.feeAccountedRewards() == 0.4 ether,
+            "first cycle should account 0.4 ETH rewards"
+        );
+
+        vm.prank(testStakePad);
+        rewardReceiver.addValidator("B", 32 ether);
+        _receiveAndAllocate(0.1 ether);
+        require(
+            rewardReceiver.feeAccountedRewards() == 0.4 ether,
+            "feeAccountedRewards must be monotone"
+        );
+
+        _receiveAndAllocate(32.2 ether);
+        require(
+            rewardReceiver.totalClaimedProvider() == 0.07 ether,
+            "must not re-commission already accounted rewards"
+        );
+        require(
+            rewardReceiver.totalClaimedClient() == 64.63 ether,
+            "client total incorrect"
+        );
+    }
+
+    function testLoweredThresholdAfterPrincipalPaidDoesNotBrickWithdraw() public {
+        vm.prank(testStakePad);
+        rewardReceiver.addValidator("A", 32 ether);
+        _receiveAndAllocate(32.4 ether);
+
+        vm.startPrank(owner);
+        rewardReceiver.proposeNewWithdrawalThreshold(16 ether);
+        rewardReceiver.acceptNewWithdrawalThreshold();
+        vm.stopPrank();
+
+        vm.deal(
+            address(rewardReceiver),
+            address(rewardReceiver).balance + 0.1 ether
+        );
+        vm.prank(owner);
+        rewardReceiver.withdraw();
+
+        require(
+            rewardReceiver.claimableProvider() == 0.01 ether,
+            "commission only on newly available balance"
+        );
+        require(
+            rewardReceiver.claimableClient() == 0.09 ether,
+            "client keeps the rest of the new inflow"
         );
     }
 
