@@ -99,16 +99,21 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
         uint256 totalReceived = _lifetimeReceived();
         uint256 totalRewards = totalReceived > _withdrawalThreshold ? totalReceived - _withdrawalThreshold : 0;
         uint256 grossRewards = totalRewards > _feeAccountedRewards ? totalRewards - _feeAccountedRewards : 0;
+
+        // Lowering the threshold can reclassify already-paid principal as rewards.
+        // That gap is not in the contract; book it without taking commission.
+        if (grossRewards > availableBalance) {
+            _feeAccountedRewards += grossRewards - availableBalance;
+            grossRewards = availableBalance;
+        }
+
         uint256 weightedCommission = (grossRewards * _commission) / BASIS_PTS;
-
-        require(weightedCommission <= availableBalance, "RewardReceiver: invalid accounting");
-
         uint256 clientAmount = availableBalance - weightedCommission;
         uint256 principalAmount = availableBalance > grossRewards ? availableBalance - grossRewards : 0;
 
         claimableClient += clientAmount;
         claimableProvider += weightedCommission;
-        _feeAccountedRewards = totalRewards;
+        _feeAccountedRewards += grossRewards;
 
         emit WithdrawalAllocated(
             _client, _provider, principalAmount, grossRewards, weightedCommission, clientAmount, weightedCommission
@@ -234,7 +239,9 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
             validators[index] = validators[len - 1];
         }
         validators.pop();
-        _decreaseProtectedPrincipal(removedPrincipal);
+        // Never lower the threshold: on-chain we cannot tell whether the
+        // removed validator's principal has already been received. A mistaken
+        // pubkey is corrected via propose/accept withdrawal threshold.
         emit ValidatorRemoved(index, removedValidator, removedPrincipal, _withdrawalThreshold);
     }
 
@@ -250,13 +257,13 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
         uint256 unaccountedRewards = _unaccountedRewards();
         uint256 availableBalance = _unallocatedBalance();
         uint256 withdrawable = unaccountedRewards < availableBalance ? unaccountedRewards : availableBalance;
-        uint256 amounToWithdraw = (withdrawable * percentage) / BASIS_PTS;
-        require(amounToWithdraw > 0, "RewardReceiver: amount too low");
-        totalClaimedProvider += amounToWithdraw;
-        _feeAccountedRewards += amounToWithdraw;
-        (bool success,) = address(_provider).call{value: amounToWithdraw}("");
+        uint256 amountToWithdraw = (withdrawable * percentage) / BASIS_PTS;
+        require(amountToWithdraw > 0, "RewardReceiver: amount too low");
+        totalClaimedProvider += amountToWithdraw;
+        _feeAccountedRewards += amountToWithdraw;
+        (bool success,) = address(_provider).call{value: amountToWithdraw}("");
         require(success, "RewardReceiver: transfer failed");
-        emit PercentageWithdrawn(_msgSender(), _provider, percentage, amounToWithdraw);
+        emit PercentageWithdrawn(_msgSender(), _provider, percentage, amountToWithdraw);
     }
 
     function getValidators() external view returns (bytes[] memory) {
@@ -336,22 +343,6 @@ contract RewardReceiver is IRewardReceiver, Initializable, OwnableUpgradeable, R
         uint256 totalReceived = _lifetimeReceived();
         uint256 totalRewards = totalReceived > _withdrawalThreshold ? totalReceived - _withdrawalThreshold : 0;
         return totalRewards > _feeAccountedRewards ? totalRewards - _feeAccountedRewards : 0;
-    }
-
-    function _decreaseProtectedPrincipal(uint256 protectedPrincipal) internal {
-        if (protectedPrincipal == 0) {
-            return;
-        }
-        if (protectedPrincipal >= _withdrawalThreshold) {
-            _withdrawalThreshold = 0;
-        } else {
-            _withdrawalThreshold -= protectedPrincipal;
-        }
-        uint256 received = _lifetimeReceived();
-        uint256 accountedPrincipal = received > _feeAccountedRewards ? received - _feeAccountedRewards : 0;
-        if (_withdrawalThreshold < accountedPrincipal) {
-            _withdrawalThreshold = accountedPrincipal;
-        }
     }
 
     function _checkValidPercentange(uint96 newPercentage) internal pure {
